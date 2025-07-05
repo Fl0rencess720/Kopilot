@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- kopilot_v1_kopilot.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

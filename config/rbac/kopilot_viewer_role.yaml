@@ -1,0 +1,29 @@
+# This rule is not used by the project kopilot itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to kopilot.fl0rencess720 resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: kopilot
+    app.kubernetes.io/managed-by: kustomize
+  name: kopilot-viewer-role
+rules:
+- apiGroups:
+  - kopilot.fl0rencess720
+  resources:
+  - kopilots
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kopilot.fl0rencess720
+  resources:
+  - kopilots/status
+  verbs:
+  - get
