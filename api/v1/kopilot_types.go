@@ -23,25 +23,137 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// KopilotSpec defines the desired state of Kopilot.
+// KopilotSpec defines the desired state of Kopilot
 type KopilotSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +kubebuilder:validation:Required
+	Schedule string `json:"schedule"`
 
-	// Foo is an example field of Kopilot. Edit kopilot_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Required
+	Selector *metav1.LabelSelector `json:"selector"`
+
+	// +kubebuilder:validation:Required
+	LogSource LogSourceSpec `json:"logSource"`
+
+	// +kubebuilder:validation:Required
+	LLM LLMSpec `json:"llm"`
+
+	// +kubebuilder:validation:Required
+	Notification NotificationSpec `json:"notification"`
+
+	// +optional
+	KnowledgeBase *KnowledgeBaseSpec `json:"knowledgeBase,omitempty"`
+}
+
+// LogSourceSpec defines the source of logs.
+type LogSourceSpec struct {
+	// Type specifies the log source type.
+	// +kubebuilder:validation:Enum=Kubernetes;Loki
+	// +kubebuilder:default:="Kubernetes"
+	Type string `json:"type"`
+
+	// This is only used if Type is "Loki".
+	// +optional
+	Loki *LokiSource `json:"loki,omitempty"`
+}
+
+// LokiSource defines connection details for a Loki instance.
+type LokiSource struct {
+	// +kubebuilder:validation:Required
+	Address string `json:"address"`
+
+	// LogQLQuery is the query to execute against Loki to fetch logs.
+	// The query can use variables like {pod}, {namespace}, {container}.
+	// +optional
+	LogQLQuery string `json:"logqlQuery,omitempty"`
+}
+
+// LLMSpec defines the AI configuration.
+type LLMSpec struct {
+
+	// Model specifies the AI model to be used for analysis.
+	// +kubebuilder:default:="gemini-2.5-flash"
+	Model string `json:"model"`
+
+	// APISecretRef is a reference to a Kubernetes Secret that holds credentials for the AI provider.
+	// The secret should contain a key like 'apiKey'.
+	// +kubebuilder:validation:Required
+	APIKeySecretRef SecretKeyRef `json:"apiKeySecretRef"`
+}
+
+// NotificationSpec defines where and how to send notifications.
+type NotificationSpec struct {
+	// Sinks is a list of notification channels.
+	// +kubebuilder:validation:MinItems=1
+	Sinks []NotificationSink `json:"sinks"`
+}
+
+// NotificationSink defines a single notification channel.
+type NotificationSink struct {
+	// Name is a unique identifier for this sink.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Feishu configures notifications to a Feishu (Lark) webhook.
+	// In the future, you could add other types like Slack here.
+	// +optional
+	Feishu *FeishuSink `json:"feishu,omitempty"`
+}
+
+// FeishuSink defines the configuration for a Feishu webhook.
+type FeishuSink struct {
+	// WebhookSecretRef is a reference to a Kubernetes Secret.
+	// The secret must contain a key (e.g., 'url') with the Feishu webhook URL.
+	// +kubebuilder:validation:Required
+	WebhookSecretRef SecretKeyRef `json:"webhookSecretRef"`
+}
+
+// SecretKeyRef is a reference to a key within a Kubernetes Secret.
+type SecretKeyRef struct {
+	// Name of the Secret.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+	// Key within the Secret.
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+}
+
+// KnowledgeBaseSpec is a placeholder for Day 6.
+type KnowledgeBaseSpec struct {
+	// ConfigMapRef references a ConfigMap containing knowledge base articles.
+	// +optional
+	ConfigMapRef *string `json:"configMapRef,omitempty"`
 }
 
 // KopilotStatus defines the observed state of Kopilot.
 type KopilotStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Conditions store the status of the Kopilot instance.
+	// This is the modern way to represent status in Kubernetes.
+	// +optional
+	// +patchStrategy=merge
+	// +patchMergeKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// LastCheckTime is the timestamp of the last log fetch.
+	// +optional
+	LastCheckTime *metav1.Time `json:"lastCheckTime,omitempty"`
+
+	// LastAnalysisResult is a summary of the latest AI analysis.
+	// +optional
+	LastAnalysisResult string `json:"lastAnalysisResult,omitempty"`
+
+	// LastError records the last error encountered by the operator for this instance.
+	// +optional
+	LastError string `json:"lastError,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Schedule",type="string",JSONPath=".spec.schedule"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].reason"
+// +kubebuilder:printcolumn:name="Last Check",type="date",JSONPath=".status.lastCheckTime"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
-// Kopilot is the Schema for the kopilots API.
+// Kopilot is the Schema for the kopilots API
 type Kopilot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -52,7 +164,7 @@ type Kopilot struct {
 
 // +kubebuilder:object:root=true
 
-// KopilotList contains a list of Kopilot.
+// KopilotList contains a list of Kopilot
 type KopilotList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
