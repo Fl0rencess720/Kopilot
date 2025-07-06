@@ -36,7 +36,7 @@ func NewGeminiClient(model, apiKey string, thinking bool) (*GeminiClient, error)
 	}, nil
 }
 
-func (g *GeminiClient) Analyze(ctx context.Context, log string) (string, error) {
+func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: g.Client,
 		Model:  g.model,
@@ -62,7 +62,7 @@ func (g *GeminiClient) Analyze(ctx context.Context, log string) (string, error) 
 	}
 
 	input := map[string]any{
-		"log": log,
+		"logs": logs,
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {
