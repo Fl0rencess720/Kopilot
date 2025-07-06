@@ -47,9 +47,15 @@ type KopilotReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	l := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var kopilot kopilotv1.Kopilot
+	if err := r.Get(ctx, req.NamespacedName, &kopilot); err != nil {
+		l.Error(err, "unable to fetch Kopilot")
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	l.Info("Reconciling Kopilot", "name", kopilot.Name, "namespace", kopilot.Namespace)
 
 	return ctrl.Result{}, nil
 }

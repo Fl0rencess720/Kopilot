@@ -39,6 +39,8 @@ import (
 
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller"
+	"github.com/Fl0rencess720/Kopilot/pkg/consts"
+	"github.com/Fl0rencess720/Kopilot/pkg/logger"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +53,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kopilotv1.AddToScheme(scheme))
+
+	logger.Init(consts.DefaultLogFilePath)
 	// +kubebuilder:scaffold:scheme
 }
 
