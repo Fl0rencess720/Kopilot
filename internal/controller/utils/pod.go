@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -24,7 +25,11 @@ func GetPodLogs(clientset kubernetes.Interface, podName string, namespace string
 	if err != nil {
 		return "", err
 	}
-	defer podLogs.Close()
+	defer func() {
+		if err := podLogs.Close(); err != nil {
+			zap.L().Error("Error closing podLogs", zap.Error(err))
+		}
+	}()
 
 	buf := new(bytes.Buffer)
 	_, err = io.Copy(buf, podLogs)
