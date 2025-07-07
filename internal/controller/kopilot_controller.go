@@ -27,6 +27,7 @@ import (
 	"github.com/Fl0rencess720/Kopilot/pkg/sink/feishusink"
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
+	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -88,7 +89,10 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	unhealthyPods := r.checkUnhealthyPods(ctx, l)
-	r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, kopilot.Spec.LLM.APIKeySecretRef.Key, kopilot.Spec.Notification.Sinks)
+	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, kopilot.Spec.LLM.APIKeySecretRef.Key, kopilot.Spec.Notification.Sinks); err != nil {
+		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
+		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+	}
 
 	kopilot.Status.LastCheckTime = &metav1.Time{Time: now}
 	if err := r.Status().Update(ctx, &kopilot); err != nil {
