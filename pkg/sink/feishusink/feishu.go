@@ -89,9 +89,9 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		errMsg := fmt.Sprintf("feishu api call failed, status code: %d, body: %s", resp.StatusCode, string(body))
-		zap.L().Error(errMsg)
-		return fmt.Errorf(errMsg)
+		err := fmt.Errorf("feishu api call failed, status code: %d, body: %s", resp.StatusCode, string(body))
+		zap.L().Error(err.Error())
+		return err
 	}
 
 	var response struct {
@@ -105,9 +105,9 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	}
 
 	if response.Code != 0 {
-		errMsg := fmt.Sprintf("feishu api call failed, code: %d, err: %s", response.Code, response.Msg)
-		zap.L().Error(errMsg)
-		return fmt.Errorf(errMsg)
+		err := fmt.Errorf("feishu api call failed, code: %d, err: %s", response.Code, response.Msg)
+		zap.L().Error(err.Error())
+		return err
 	}
 
 	return nil
