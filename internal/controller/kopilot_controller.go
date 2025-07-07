@@ -89,7 +89,13 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	unhealthyPods := r.checkUnhealthyPods(ctx, l)
-	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, kopilot.Spec.LLM.APIKeySecretRef.Key, kopilot.Spec.Notification.Sinks); err != nil {
+
+	apikey, err := utils.GetSecret(r.Clientset, kopilot.Spec.LLM.APIKeySecretRef.Key, "default", kopilot.Spec.LLM.APIKeySecretRef.Name)
+	if err != nil {
+		l.Error(err, "unable to get LLM API key")
+		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+	}
+	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, apikey, kopilot.Spec.Notification.Sinks); err != nil {
 		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
 		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 	}
@@ -156,12 +162,22 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
 			return err
 		}
-		sign, err := feishusink.GenSign(sinks[0].Feishu.SignatureSecretRef.Key, time.Now().Unix())
+		signatureSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.SignatureSecretRef.Key, "default", sinks[0].Feishu.SignatureSecretRef.Name)
+		if err != nil {
+			l.Error(err, "unable to get signature secret")
+			return err
+		}
+		sign, err := feishusink.GenSign(signatureSecret, time.Now().Unix())
 		if err != nil {
 			l.Error(err, "unable to generate sign")
 			return err
 		}
-		if err := feishusink.SendBotMessage(sinks[0].Feishu.WebhookSecretRef.Key, sign, pod.Namespace, pod.Name, result); err != nil {
+		webhookSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
+		if err != nil {
+			l.Error(err, "unable to get webhook secret")
+			return err
+		}
+		if err := feishusink.SendBotMessage(webhookSecret, sign, pod.Namespace, pod.Name, result); err != nil {
 			l.Error(err, "unable to send result to sink")
 			return err
 		}
