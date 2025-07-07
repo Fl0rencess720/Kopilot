@@ -23,6 +23,8 @@ import (
 
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
+	"github.com/Fl0rencess720/Kopilot/pkg/llm"
+	"github.com/Fl0rencess720/Kopilot/pkg/sink/feishusink"
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,9 +88,7 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	unhealthyPods := r.checkUnhealthyPods(ctx, l)
-	for _, pod := range unhealthyPods {
-		l.Info("Found unhealthy pod", "name", pod.Name, "namespace", pod.Namespace, "log", pod.Log)
-	}
+	r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, kopilot.Spec.LLM.APIKeySecretRef.Key, kopilot.Spec.Notification.Sinks)
 
 	kopilot.Status.LastCheckTime = &metav1.Time{Time: now}
 	if err := r.Status().Update(ctx, &kopilot); err != nil {
@@ -138,4 +138,29 @@ func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logge
 	}
 
 	return unhealthyPods
+}
+
+func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.Logger, unhealthyPods []UnHealthyPod, thinking bool, model, apikey string, sinks []kopilotv1.NotificationSink) error {
+	for _, pod := range unhealthyPods {
+		c, err := llm.NewGeminiClient(model, apikey, thinking)
+		if err != nil {
+			l.Error(err, "unable to create Gemini client")
+			return err
+		}
+		result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
+		if err != nil {
+			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
+			return err
+		}
+		sign, err := feishusink.GenSign(sinks[0].Feishu.SignatureSecretRef.Key, time.Now().Unix())
+		if err != nil {
+			l.Error(err, "unable to generate sign")
+			return err
+		}
+		if err := feishusink.SendBotMessage(sinks[0].Feishu.WebhookSecretRef.Key, sign, pod.Namespace, pod.Name, result); err != nil {
+			l.Error(err, "unable to send result to sink")
+			return err
+		}
+	}
+	return nil
 }

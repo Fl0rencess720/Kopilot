@@ -105,6 +105,12 @@ type FeishuSink struct {
 	// The secret must contain a key (e.g., 'url') with the Feishu webhook URL.
 	// +kubebuilder:validation:Required
 	WebhookSecretRef SecretKeyRef `json:"webhookSecretRef"`
+
+	// SignatureSecretRef is a reference to a Kubernetes Secret that holds the webhook signature.
+	// The secret should contain a key (e.g., 'signature') with the Feishu webhook signature.
+	// This is required for webhooks that use custom signatures for security.
+	// +kubebuilder:validation:Required
+	SignatureSecretRef SecretKeyRef `json:"signatureSecretRef"`
 }
 
 // SecretKeyRef is a reference to a key within a Kubernetes Secret.

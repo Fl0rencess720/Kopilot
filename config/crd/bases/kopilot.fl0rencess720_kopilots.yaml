@@ -126,6 +126,22 @@ spec:
                             Feishu configures notifications to a Feishu (Lark) webhook.
                             In the future, you could add other types like Slack here.
                           properties:
+                            signatureSecretRef:
+                              description: |-
+                                SignatureSecretRef is a reference to a Kubernetes Secret that holds the webhook signature.
+                                The secret should contain a key (e.g., 'signature') with the Feishu webhook signature.
+                                This is required for webhooks that use custom signatures for security.
+                              properties:
+                                key:
+                                  description: Key within the Secret.
+                                  type: string
+                                name:
+                                  description: Name of the Secret.
+                                  type: string
+                              required:
+                              - key
+                              - name
+                              type: object
                             webhookSecretRef:
                               description: |-
                                 WebhookSecretRef is a reference to a Kubernetes Secret.
@@ -142,6 +158,7 @@ spec:
                               - name
                               type: object
                           required:
+                          - signatureSecretRef
                           - webhookSecretRef
                           type: object
                         name:
