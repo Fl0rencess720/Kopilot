@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -17,20 +18,20 @@ import (
 func GenSign(secret string, timestamp int64) (string, error) {
 	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
 
-	h := hmac.New(sha256.New, []byte(secret))
-	_, err := h.Write([]byte(stringToSign))
-	if err != nil {
-		return "", err
-	}
-	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	h := hmac.New(sha256.New, []byte(stringToSign))
+
+	signatureBytes := h.Sum(nil)
+
+	signature := base64.StdEncoding.EncodeToString(signatureBytes)
+
 	return signature, nil
 }
 
 type BotMessage struct {
-	Timestamp int64       `json:"timestamp"`
-	Sign      string      `json:"sign"`
 	MsgType   string      `json:"msg_type"`
 	Content   interface{} `json:"content"`
+	Sign      string      `json:"sign,omitempty"`
+	Timestamp string      `json:"timestamp,omitempty"`
 }
 
 type TextContent struct {
@@ -49,7 +50,7 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	messageText := fmt.Sprintf("Namespace: %s\nPod: %s\n内容: %s", namespace, podName, content)
 
 	message := BotMessage{
-		Timestamp: timestamp,
+		Timestamp: strconv.FormatInt(timestamp, 10),
 		Sign:      signature,
 		MsgType:   "text",
 		Content: TextContent{

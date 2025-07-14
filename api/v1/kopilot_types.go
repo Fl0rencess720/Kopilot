@@ -71,7 +71,7 @@ type LokiSource struct {
 type LLMSpec struct {
 
 	// Model specifies the AI model to be used for analysis.
-	// +kubebuilder:validation:Enum=Gemini;DeepSeek
+	// +kubebuilder:validation:Enum=gemini;deepseek
 	// +kubebuilder:default:="gemini"
 	Model string `json:"model"`
 

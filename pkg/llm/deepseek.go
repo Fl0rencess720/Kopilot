@@ -22,10 +22,11 @@ func NewDeepSeekClient(model, apiKey string) (*DeepSeekClient, error) {
 
 func (g *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
 	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
-		APIKey:    g.apiKey,
-		Model:     g.model,
-		MaxTokens: 2000,
-		BaseURL:   "https://api.deepseek.com/beta",
+		APIKey:             g.apiKey,
+		Model:              g.model,
+		MaxTokens:          2000,
+		BaseURL:            "https://api.deepseek.com/beta",
+		ResponseFormatType: deepseek.ResponseFormatTypeJSONObject,
 	})
 	if err != nil {
 		zap.L().Error("NewChatModel of deepseek failed", zap.Error(err))

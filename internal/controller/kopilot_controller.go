@@ -162,17 +162,12 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 			l.Error(err, "unable to get signature secret")
 			return err
 		}
-		sign, err := feishusink.GenSign(signatureSecret, time.Now().Unix())
-		if err != nil {
-			l.Error(err, "unable to generate sign")
-			return err
-		}
-		webhookSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
+		webhookURL, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
 		if err != nil {
 			l.Error(err, "unable to get webhook secret")
 			return err
 		}
-		if err := feishusink.SendBotMessage(webhookSecret, sign, pod.Namespace, pod.Name, result); err != nil {
+		if err := feishusink.SendBotMessage(webhookURL, signatureSecret, pod.Namespace, pod.Name, result); err != nil {
 			l.Error(err, "unable to send result to sink")
 			return err
 		}
