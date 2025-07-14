@@ -2,72 +2,35 @@ package llm
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/cloudwego/eino-ext/components/model/gemini"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
+	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
+	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
 	"go.uber.org/zap"
-	"google.golang.org/genai"
+	"k8s.io/client-go/kubernetes"
 )
 
-type LLM interface {
-	Analyze()
+type LLMClient interface {
+	Analyze(ctx context.Context, namespace, podName, logs string) (string, error)
 }
 
-type GeminiClient struct {
-	model    string
-	thinking bool
-	Client   *genai.Client
-}
-
-func NewGeminiClient(model, apiKey string, thinking bool) (*GeminiClient, error) {
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: apiKey,
-	})
-	if err != nil {
-		zap.L().Error("NewClient of gemini failed", zap.Error(err))
-		return nil, err
+func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec) (LLMClient, error) {
+	switch llmSpec.Model {
+	case "gemini":
+		apikey, err := utils.GetSecret(clientset, llmSpec.Gemini.APIKeySecretRef.Key, "default", llmSpec.Gemini.APIKeySecretRef.Name)
+		if err != nil {
+			zap.L().Error("unable to get LLM API key", zap.Error(err))
+			return nil, err
+		}
+		return NewGeminiClient(llmSpec.Gemini.ModelName, apikey, llmSpec.Gemini.Thinking)
+	case "deepseek":
+		apikey, err := utils.GetSecret(clientset, llmSpec.DeepSeek.APIKeySecretRef.Key, "default", llmSpec.DeepSeek.APIKeySecretRef.Name)
+		if err != nil {
+			zap.L().Error("unable to get LLM API key", zap.Error(err))
+			return nil, err
+		}
+		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey)
+	default:
+		return nil, fmt.Errorf("unsupported LLM model: %s", llmSpec.Model)
 	}
-	return &GeminiClient{
-		model:    model,
-		Client:   client,
-		thinking: thinking,
-	}, nil
-}
-
-func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
-	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: g.Client,
-		Model:  g.model,
-		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: g.thinking,
-			ThinkingBudget:  nil,
-		},
-		ResponseSchema: KubernetesLogAnalyzeResponseSchema,
-	})
-	if err != nil {
-		zap.L().Error("NewChatModel of gemini failed", zap.Error(err))
-		return "", err
-	}
-	chain := compose.NewChain[map[string]any, *schema.Message]()
-	chain.
-		AppendChatTemplate(KubernetesLogAnalyzeSystemPrompt).
-		AppendChatModel(cm)
-
-	runnable, err := chain.Compile(ctx)
-	if err != nil {
-		zap.L().Error("Compile chain failed", zap.Error(err))
-		return "", err
-	}
-
-	input := map[string]any{
-		"logs": logs,
-	}
-	result, err := runnable.Invoke(ctx, input)
-	if err != nil {
-		zap.L().Error("Invoke chain failed", zap.Error(err))
-		return "", err
-	}
-	return result.Content, nil
 }

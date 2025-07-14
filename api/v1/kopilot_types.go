@@ -71,11 +71,15 @@ type LokiSource struct {
 type LLMSpec struct {
 
 	// Model specifies the AI model to be used for analysis.
+	// +kubebuilder:validation:Enum=Gemini;DeepSeek
 	// +kubebuilder:default:="gemini"
 	Model string `json:"model"`
 
 	// +optional
 	Gemini GeminiSpec `json:"gemini"`
+
+	// +optional
+	DeepSeek DeepSeekSpec `json:"deepseek"`
 }
 
 // GeminiSpec defines Gemini-specific configuration.
@@ -89,6 +93,17 @@ type GeminiSpec struct {
 
 	// APIKeySecretRef is a reference to a Kubernetes Secret.
 	// The secret must contain a key (e.g., 'apiKey') with the Gemini API key.
+	// +kubebuilder:validation:Required
+	APIKeySecretRef SecretKeyRef `json:"apiKeySecretRef"`
+}
+
+type DeepSeekSpec struct {
+	// ModelName is the specific DeepSeek model to use.
+	// +kubebuilder:default:="deepseek-2.5-flash"
+	ModelName string `json:"modelName"`
+
+	// APIKeySecretRef is a reference to a Kubernetes Secret.
+	// The secret must contain a key (e.g., 'apiKey') with the DeepSeek API key.
 	// +kubebuilder:validation:Required
 	APIKeySecretRef SecretKeyRef `json:"apiKeySecretRef"`
 }
