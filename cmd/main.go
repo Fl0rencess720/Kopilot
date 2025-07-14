@@ -24,7 +24,9 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -39,6 +41,8 @@ import (
 
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller"
+	"github.com/Fl0rencess720/Kopilot/pkg/consts"
+	"github.com/Fl0rencess720/Kopilot/pkg/logger"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -51,6 +55,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(kopilotv1.AddToScheme(scheme))
+
+	logger.Init(consts.DefaultLogFilePath)
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -201,10 +207,23 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+	// cfg, err := clientcmd.BuildConfigFromFlags("", "/root/.kube/config")
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		setupLog.Error(err, "unable to get in cluster config")
+		os.Exit(1)
+	}
+	clientset, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		setupLog.Error(err, "unable to get clientset")
+		os.Exit(1)
+	}
+	// setup controllers
 
 	if err := (&controller.KopilotReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Clientset: clientset,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Kopilot")
 		os.Exit(1)

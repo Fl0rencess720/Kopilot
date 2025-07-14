@@ -1,11 +1,45 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    app.kubernetes.io/name: kopilot
-    app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:
-- apiGroups: [""]
-  resources: ["pods"]
-  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - kopilot.fl0rencess720
+  resources:
+  - kopilots
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kopilot.fl0rencess720
+  resources:
+  - kopilots/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kopilot.fl0rencess720
+  resources:
+  - kopilots/status
+  verbs:
+  - get
+  - patch
+  - update
