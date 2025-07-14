@@ -71,11 +71,24 @@ type LokiSource struct {
 type LLMSpec struct {
 
 	// Model specifies the AI model to be used for analysis.
-	// +kubebuilder:default:="gemini-2.5-flash"
+	// +kubebuilder:default:="gemini"
 	Model string `json:"model"`
 
-	// APISecretRef is a reference to a Kubernetes Secret that holds credentials for the AI provider.
-	// The secret should contain a key like 'apiKey'.
+	// +optional
+	Gemini GeminiSpec `json:"gemini"`
+}
+
+// GeminiSpec defines Gemini-specific configuration.
+type GeminiSpec struct {
+	// ModelName is the specific Gemini model to use.
+	// +kubebuilder:default:="gemini-2.5-flash"
+	ModelName string `json:"modelName"`
+	// Thinking enables the AI's reasoning capabilities.
+	// +kubebuilder:default:=true
+	Thinking bool `json:"thinking"`
+
+	// APIKeySecretRef is a reference to a Kubernetes Secret.
+	// The secret must contain a key (e.g., 'apiKey') with the Gemini API key.
 	// +kubebuilder:validation:Required
 	APIKeySecretRef SecretKeyRef `json:"apiKeySecretRef"`
 }

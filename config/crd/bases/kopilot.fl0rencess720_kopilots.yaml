@@ -63,27 +63,42 @@ spec:
               llm:
                 description: LLMSpec defines the AI configuration.
                 properties:
-                  apiKeySecretRef:
-                    description: |-
-                      APISecretRef is a reference to a Kubernetes Secret that holds credentials for the AI provider.
-                      The secret should contain a key like 'apiKey'.
+                  gemini:
+                    description: GeminiSpec defines Gemini-specific configuration.
                     properties:
-                      key:
-                        description: Key within the Secret.
+                      apiKeySecretRef:
+                        description: |-
+                          APIKeySecretRef is a reference to a Kubernetes Secret.
+                          The secret must contain a key (e.g., 'apiKey') with the Gemini API key.
+                        properties:
+                          key:
+                            description: Key within the Secret.
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      modelName:
+                        default: gemini-2.5-flash
+                        description: ModelName is the specific Gemini model to use.
                         type: string
-                      name:
-                        description: Name of the Secret.
-                        type: string
+                      thinking:
+                        default: true
+                        description: Thinking enables the AI's reasoning capabilities.
+                        type: boolean
                     required:
-                    - key
-                    - name
+                    - apiKeySecretRef
+                    - modelName
+                    - thinking
                     type: object
                   model:
-                    default: gemini-2.5-flash
+                    default: gemini
                     description: Model specifies the AI model to be used for analysis.
                     type: string
                 required:
-                - apiKeySecretRef
                 - model
                 type: object
               logSource:

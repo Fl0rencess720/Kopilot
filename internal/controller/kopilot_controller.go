@@ -23,11 +23,8 @@ import (
 
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
-	"github.com/Fl0rencess720/Kopilot/pkg/llm"
-	"github.com/Fl0rencess720/Kopilot/pkg/sink/feishusink"
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
-	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -41,12 +38,6 @@ type KopilotReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	Clientset kubernetes.Interface
-}
-
-type UnHealthyPod struct {
-	Namespace string
-	Name      string
-	Log       string
 }
 
 // +kubebuilder:rbac:groups=kopilot.fl0rencess720,resources=kopilots,verbs=get;list;watch;create;update;patch;delete
@@ -88,22 +79,11 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: expectedNextCheckTime.Sub(now)}, nil
 	}
 
-	unhealthyPods := r.checkUnhealthyPods(ctx, l)
-
-	apikey, err := utils.GetSecret(r.Clientset, kopilot.Spec.LLM.APIKeySecretRef.Key, "default", kopilot.Spec.LLM.APIKeySecretRef.Name)
-	if err != nil {
-		l.Error(err, "unable to get LLM API key")
-		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
-	}
-	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, true, kopilot.Spec.LLM.Model, apikey, kopilot.Spec.Notification.Sinks); err != nil {
-		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
-		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
-	}
+	_ = r.checkUnhealthyPods(ctx, l)
 
 	kopilot.Status.LastCheckTime = &metav1.Time{Time: now}
 	if err := r.Status().Update(ctx, &kopilot); err != nil {
 		l.Error(err, "failed to update Kopilot status")
-
 	}
 
 	nextCheckTime := schedule.Next(now)
@@ -118,19 +98,25 @@ func (r *KopilotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logger) []UnHealthyPod {
+func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logger) int {
 	pods, err := r.Clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		l.Error(err, "unable to list pods")
-		return nil
+		return 0
 	}
 
-	var unhealthyPods []UnHealthyPod
+	unhealthyCount := 0
 	for _, pod := range pods.Items {
 		if pod.Kind == "Kopilot" {
 			continue
 		}
+		if pod.Labels != nil {
+			if appLabel, exists := pod.Labels["app"]; exists && appLabel == "kopilot-sample" {
+				continue
+			}
+		}
 		if !utils.CheckPodHealthyStatus(pod.Status) {
+			unhealthyCount++
 			l.Info("Found unhealthy pod", "name", pod.Name, "namespace", pod.Namespace, "phase", pod.Status.Phase)
 
 			logs, err := utils.GetPodLogs(r.Clientset, pod.Name, pod.Namespace)
@@ -139,48 +125,14 @@ func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logge
 				logs = fmt.Sprintf("Failed to retrieve logs: %v", err)
 			}
 
-			unhealthyPods = append(unhealthyPods, UnHealthyPod{
-				Namespace: pod.Namespace,
-				Name:      pod.Name,
-				Log:       logs,
-			})
+			l.Info("Unhealthy pod details",
+				"name", pod.Name,
+				"namespace", pod.Namespace,
+				"phase", pod.Status.Phase,
+				"logs", logs)
 		}
 	}
 
-	return unhealthyPods
-}
-
-func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.Logger, unhealthyPods []UnHealthyPod, thinking bool, model, apikey string, sinks []kopilotv1.NotificationSink) error {
-	for _, pod := range unhealthyPods {
-		c, err := llm.NewGeminiClient(model, apikey, thinking)
-		if err != nil {
-			l.Error(err, "unable to create Gemini client")
-			return err
-		}
-		result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
-		if err != nil {
-			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
-			return err
-		}
-		signatureSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.SignatureSecretRef.Key, "default", sinks[0].Feishu.SignatureSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get signature secret")
-			return err
-		}
-		sign, err := feishusink.GenSign(signatureSecret, time.Now().Unix())
-		if err != nil {
-			l.Error(err, "unable to generate sign")
-			return err
-		}
-		webhookSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get webhook secret")
-			return err
-		}
-		if err := feishusink.SendBotMessage(webhookSecret, sign, pod.Namespace, pod.Name, result); err != nil {
-			l.Error(err, "unable to send result to sink")
-			return err
-		}
-	}
-	return nil
+	l.Info("Health check completed", "unhealthyPods", unhealthyCount, "totalPods", len(pods.Items))
+	return unhealthyCount
 }

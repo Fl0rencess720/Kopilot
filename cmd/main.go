@@ -207,7 +207,7 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
+	// cfg, err := clientcmd.BuildConfigFromFlags("", "/root/.kube/config")
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		setupLog.Error(err, "unable to get in cluster config")
