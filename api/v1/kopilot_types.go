@@ -128,6 +128,10 @@ type FeishuSink struct {
 
 // SecretKeyRef is a reference to a key within a Kubernetes Secret.
 type SecretKeyRef struct {
+	// Namespace is the namespace where the Secret is located.
+	// If not specified, defaults to the same namespace as the Kopilot instance.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 	// Name of the Secret.
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
