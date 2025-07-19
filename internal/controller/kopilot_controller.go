@@ -88,7 +88,7 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: expectedNextCheckTime.Sub(now)}, nil
 	}
 
-	unhealthyPods := r.checkUnhealthyPods(ctx, l)
+	unhealthyPods := r.getUnhealthyPods(ctx, l, kopilot.Spec.LogSource)
 
 	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, kopilot.Spec.LLM, kopilot.Spec.Notification.Sinks); err != nil {
 		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
@@ -113,7 +113,7 @@ func (r *KopilotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logger) []UnHealthyPod {
+func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger, logSource kopilotv1.LogSourceSpec) []UnHealthyPod {
 	pods, err := r.Clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		l.Error(err, "unable to list pods")
@@ -126,12 +126,24 @@ func (r *KopilotReconciler) checkUnhealthyPods(ctx context.Context, l logr.Logge
 			continue
 		}
 		if !utils.CheckPodHealthyStatus(pod.Status) {
+			logs := ""
 			l.Info("Found unhealthy pod", "name", pod.Name, "namespace", pod.Namespace, "phase", pod.Status.Phase)
-
-			logs, err := utils.GetPodLogs(r.Clientset, pod.Name, pod.Namespace)
-			if err != nil {
-				l.Error(err, "unable to get pod logs, skipping", "pod", pod.Name, "namespace", pod.Namespace)
-				logs = fmt.Sprintf("Failed to retrieve logs: %v", err)
+			switch logSource.Type {
+			case "kubernetes":
+				logs, err = utils.GetPodLogsFromKubernetes(r.Clientset, pod.Name, pod.Namespace)
+				if err != nil {
+					l.Error(err, "unable to get pod logs from kubernetes, skipping", "pod", pod.Name, "namespace", pod.Namespace)
+					logs = fmt.Sprintf("Failed to retrieve logs: %v", err)
+				}
+			case "loki":
+				logs, err = utils.GetPodLogsFromLoki(pod.Name, pod.Namespace, logSource.Loki.Address)
+				if err != nil {
+					l.Error(err, "unable to get pod logs from loki, skipping", "pod", pod.Name, "namespace", pod.Namespace)
+					logs = fmt.Sprintf("Failed to retrieve logs: %v", err)
+				}
+			default:
+				l.Error(fmt.Errorf("unknown log source type: %s", logSource.Type), "unable to get pod logs")
+				return nil
 			}
 
 			unhealthyPods = append(unhealthyPods, UnHealthyPod{
