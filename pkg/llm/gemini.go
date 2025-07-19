@@ -13,10 +13,11 @@ import (
 type GeminiClient struct {
 	model    string
 	thinking bool
-	Client   *genai.Client
+	client   *genai.Client
+	language string
 }
 
-func NewGeminiClient(model, apiKey string, thinking bool) (*GeminiClient, error) {
+func NewGeminiClient(model, apiKey, language string, thinking bool) (*GeminiClient, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: apiKey,
@@ -27,14 +28,15 @@ func NewGeminiClient(model, apiKey string, thinking bool) (*GeminiClient, error)
 	}
 	return &GeminiClient{
 		model:    model,
-		Client:   client,
+		client:   client,
 		thinking: thinking,
+		language: language,
 	}, nil
 }
 
 func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: g.Client,
+		Client: g.client,
 		Model:  g.model,
 		ThinkingConfig: &genai.ThinkingConfig{
 			IncludeThoughts: g.thinking,
@@ -59,6 +61,7 @@ func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs str
 
 	input := map[string]any{
 		"logs": logs,
+		"lang": g.language,
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {
