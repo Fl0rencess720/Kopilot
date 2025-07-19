@@ -49,10 +49,10 @@ func (l *LokiClient) FetchLogs(opts LokiQueryOptions) (string, error) {
 		opts.Limit = 20
 	}
 	if opts.TimeRange <= 0 {
-		opts.TimeRange = 1 * time.Hour
+		opts.TimeRange = 700 * time.Hour
 	}
 
-	streamSelector := fmt.Sprintf(`{namespace="%s", pod="%s"}`, opts.Namespace, opts.PodName)
+	streamSelector := fmt.Sprintf(`{namespace="%s",pod="%s"}`, opts.Namespace, opts.PodName)
 	finalQuery := streamSelector
 	if opts.Filter != "" {
 		finalQuery = fmt.Sprintf("%s %s", streamSelector, opts.Filter)
@@ -69,11 +69,10 @@ func (l *LokiClient) FetchLogs(opts LokiQueryOptions) (string, error) {
 	params.Add("query", finalQuery)
 	params.Add("limit", fmt.Sprintf("%d", opts.Limit))
 	params.Add("direction", "backward")
-	params.Add("start", fmt.Sprintf("%d", startTime.UnixNano()))
-	params.Add("end", fmt.Sprintf("%d", endTime.UnixNano()))
+	params.Add("start", startTime.Format(time.RFC3339Nano))
+	params.Add("end", endTime.Format(time.RFC3339Nano))
 
 	lokiURL.RawQuery = params.Encode()
-
 	client := &http.Client{Timeout: 30 * time.Second}
 	req, err := http.NewRequest("GET", lokiURL.String(), nil)
 	if err != nil {
@@ -109,6 +108,5 @@ func (l *LokiClient) FetchLogs(opts LokiQueryOptions) (string, error) {
 	for i, j := 0, len(collectedLogs)-1; i < j; i, j = i+1, j-1 {
 		collectedLogs[i], collectedLogs[j] = collectedLogs[j], collectedLogs[i]
 	}
-
 	return strings.Join(collectedLogs, "\n"), nil
 }
