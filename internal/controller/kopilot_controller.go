@@ -129,13 +129,13 @@ func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger,
 			logs := ""
 			l.Info("Found unhealthy pod", "name", pod.Name, "namespace", pod.Namespace, "phase", pod.Status.Phase)
 			switch logSource.Type {
-			case "kubernetes":
+			case "Kubernetes":
 				logs, err = utils.GetPodLogsFromKubernetes(r.Clientset, pod.Name, pod.Namespace)
 				if err != nil {
 					l.Error(err, "unable to get pod logs from kubernetes, skipping", "pod", pod.Name, "namespace", pod.Namespace)
 					logs = fmt.Sprintf("Failed to retrieve logs: %v", err)
 				}
-			case "loki":
+			case "Loki":
 				logs, err = utils.GetPodLogsFromLoki(pod.Name, pod.Namespace, logSource.Loki.Address)
 				if err != nil {
 					l.Error(err, "unable to get pod logs from loki, skipping", "pod", pod.Name, "namespace", pod.Namespace)
