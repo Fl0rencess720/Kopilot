@@ -15,6 +15,11 @@ import (
 	"go.uber.org/zap"
 )
 
+type LLMContent struct {
+	Reason   string `json:"reason"`
+	Solution string `json:"solution"`
+}
+
 type BotMessage struct {
 	MsgType   string      `json:"msg_type"`
 	Content   interface{} `json:"content"`
@@ -125,14 +130,33 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	return nil
 }
 
+func unmarshalLLMContent(content string) (LLMContent, error) {
+	var llmContent LLMContent
+	if err := json.Unmarshal([]byte(content), &llmContent); err != nil {
+		zap.L().Error("unmarshal LLM content failed", zap.Error(err))
+		return LLMContent{}, err
+	}
+	return llmContent, nil
+}
+
 func genPostContent(namespace, podName, content string) PostContent {
+	llmContent, err := unmarshalLLMContent(content)
+	if err != nil {
+		zap.L().Error("unmarshal LLM content failed", zap.Error(err))
+		return PostContent{}
+	}
+
 	postContent := PostContent{}
 	postContent.Post.ZhCn.Title = "Kopilot Bot Alert"
 	postContent.Post.ZhCn.Content = [][]Elements{
 		{
 			{
 				Tag:  "text",
-				Text: fmt.Sprintf("namespace: %s\npod: %s\n%s", namespace, podName, content),
+				Text: fmt.Sprintf("namespace: %s\npod: %s\n", namespace, podName),
+			},
+			{
+				Tag:  "text",
+				Text: fmt.Sprintf("reason: %s\nsolution: %s\n", llmContent.Reason, llmContent.Solution),
 			},
 		},
 	}
