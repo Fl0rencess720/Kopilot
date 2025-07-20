@@ -160,11 +160,49 @@ type SecretKeyRef struct {
 	Key string `json:"key"`
 }
 
-// KnowledgeBaseSpec is a placeholder for Day 6.
+// KnowledgeBaseSpec is a placeholder based on the Milvus.
 type KnowledgeBaseSpec struct {
-	// ConfigMapRef references a ConfigMap containing knowledge base articles.
+	// Address is the URL of the milvus service.
+	// +kubebuilder:validation:Required
+	Address string `json:"address"`
+
+	// CollectionName is the name of the collection to store the knowledge base.
+	// +kubebuilder:validation:Required
+	CollectionName string `json:"collectionName"`
+
 	// +optional
-	ConfigMapRef *string `json:"configMapRef,omitempty"`
+	UsernameSecretRef SecretKeyRef `json:"usernameSecretRef"`
+
+	// +optional
+	PasswordSecretRef SecretKeyRef `json:"passwordSecretRef"`
+
+	// Dimension is the dimension of the vectors.
+	// +kubebuilder:validation:Required
+	Dimension int `json:"dimension"`
+
+	// TopK is the number of top results to return from the knowledge base.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default:=10
+	TopK int `json:"topK"`
+
+	// EmbeddingProvider is the provider for generating embeddings.
+	// +kubebuilder:validation:Enum=ark
+	// +kubebuilder:default:="ark"
+	EmbeddingProvider string `json:"embeddingProvider"`
+
+	// +optional
+	ArkSpec ArkSpec `json:"arkSpec"`
+}
+
+type ArkSpec struct {
+	// ModelName is the specific Ark model to use.
+	// +kubebuilder:default:="doubao-embedding-large-text-250515"
+	ModelName string `json:"modelName"`
+
+	// APIKeySecretRef is a reference to a Kubernetes Secret.
+	// The secret must contain a key (e.g., 'apiKey') with the Ark API key.
+	// +kubebuilder:validation:Required
+	APIKeySecretRef SecretKeyRef `json:"apiKeySecretRef"`
 }
 
 // KopilotStatus defines the observed state of Kopilot.

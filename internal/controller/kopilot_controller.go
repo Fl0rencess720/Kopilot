@@ -90,7 +90,7 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	unhealthyPods := r.getUnhealthyPods(ctx, l, kopilot.Spec.LogSource)
 
-	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, kopilot.Spec.LLM, kopilot.Spec.Notification.Sinks); err != nil {
+	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, kopilot.Spec.LLM, kopilot.Spec.Notification.Sinks, kopilot.Spec.KnowledgeBase); err != nil {
 		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
 		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
 	}
@@ -157,13 +157,40 @@ func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger,
 	return unhealthyPods
 }
 
-func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.Logger, unhealthyPods []UnHealthyPod, llmSpec kopilotv1.LLMSpec, sinks []kopilotv1.NotificationSink) error {
+func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.Logger, unhealthyPods []UnHealthyPod, llmSpec kopilotv1.LLMSpec, sinks []kopilotv1.NotificationSink, knowledgeBase *kopilotv1.KnowledgeBaseSpec) error {
+	var err error
+
 	for _, pod := range unhealthyPods {
-		c, err := llm.NewLLMClient(ctx, r.Clientset, llmSpec)
-		if err != nil {
-			l.Error(err, "unable to create Gemini client")
-			return err
+		var c llm.LLMClient
+		if knowledgeBase != nil {
+			embedder, err := llm.NewEmbedder(ctx, r.Clientset, *knowledgeBase)
+			if err != nil {
+				l.Error(err, "unable to create embedder")
+				return err
+			}
+			milvusClient, err := llm.NewMilvusClient(ctx, r.Clientset, *knowledgeBase)
+			if err != nil {
+				l.Error(err, "unable to create milvus client")
+				return err
+			}
+			retriever, err := llm.NewHybridRetriever(milvusClient, embedder, *knowledgeBase)
+			if err != nil {
+				l.Error(err, "unable to create hybrid retriever")
+				return err
+			}
+			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, retriever)
+			if err != nil {
+				l.Error(err, "unable to create LLM client")
+				return err
+			}
+		} else {
+			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, nil)
+			if err != nil {
+				l.Error(err, "unable to create LLM client")
+				return err
+			}
 		}
+
 		result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
 		if err != nil {
 			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
@@ -183,6 +210,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 			l.Error(err, "unable to send result to sink")
 			return err
 		}
+
 	}
 	return nil
 }

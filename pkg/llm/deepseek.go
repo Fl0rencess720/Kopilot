@@ -10,12 +10,13 @@ import (
 )
 
 type DeepSeekClient struct {
-	model    string
-	apiKey   string
-	language string
+	model     string
+	apiKey    string
+	language  string
+	retriever *HybridRetriever
 }
 
-func NewDeepSeekClient(model, apiKey, language string) (*DeepSeekClient, error) {
+func NewDeepSeekClient(model, apiKey, language string, retriever *HybridRetriever) (*DeepSeekClient, error) {
 	return &DeepSeekClient{
 		model:    model,
 		apiKey:   apiKey,
@@ -35,15 +36,21 @@ func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs s
 		zap.L().Error("NewChatModel of deepseek failed", zap.Error(err))
 		return "", err
 	}
-	chain := compose.NewChain[map[string]any, *schema.Message]()
-	chain.
-		AppendChatTemplate(KubernetesLogAnalyzeSystemPrompt).
-		AppendChatModel(cm)
 
-	runnable, err := chain.Compile(ctx)
-	if err != nil {
-		zap.L().Error("Compile chain failed", zap.Error(err))
-		return "", err
+	var runnable compose.Runnable[map[string]any, *schema.Message]
+
+	if c.retriever != nil {
+		runnable, err = newRunnableWithRetriever(ctx, cm, c.retriever)
+		if err != nil {
+			zap.L().Error("newChainWithRetriever failed", zap.Error(err))
+			return "", err
+		}
+	} else {
+		runnable, err = newRunnable(ctx, cm)
+		if err != nil {
+			zap.L().Error("newChain failed", zap.Error(err))
+			return "", err
+		}
 	}
 
 	input := map[string]any{
