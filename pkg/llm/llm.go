@@ -29,7 +29,7 @@ func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec k
 			zap.L().Error("unable to get LLM API key", zap.Error(err))
 			return nil, err
 		}
-		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, llmSpec.Language, apikey)
+		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey, llmSpec.Language)
 	default:
 		return nil, fmt.Errorf("unsupported LLM model: %s", llmSpec.Model)
 	}
