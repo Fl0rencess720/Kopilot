@@ -14,7 +14,7 @@ type LLMClient interface {
 	Analyze(ctx context.Context, namespace, podName, logs string) (string, error)
 }
 
-func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec) (LLMClient, error) {
+func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec, retriever *HybridRetriever) (LLMClient, error) {
 	switch llmSpec.Model {
 	case "gemini":
 		apikey, err := utils.GetSecret(clientset, llmSpec.Gemini.APIKeySecretRef.Key, "default", llmSpec.Gemini.APIKeySecretRef.Name)
@@ -22,14 +22,14 @@ func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec k
 			zap.L().Error("unable to get LLM API key", zap.Error(err))
 			return nil, err
 		}
-		return NewGeminiClient(llmSpec.Gemini.ModelName, apikey, llmSpec.Language, llmSpec.Gemini.Thinking)
+		return NewGeminiClient(llmSpec.Gemini.ModelName, apikey, llmSpec.Language, llmSpec.Gemini.Thinking, retriever)
 	case "deepseek":
 		apikey, err := utils.GetSecret(clientset, llmSpec.DeepSeek.APIKeySecretRef.Key, "default", llmSpec.DeepSeek.APIKeySecretRef.Name)
 		if err != nil {
 			zap.L().Error("unable to get LLM API key", zap.Error(err))
 			return nil, err
 		}
-		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey, llmSpec.Language)
+		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey, llmSpec.Language, retriever)
 	default:
 		return nil, fmt.Errorf("unsupported LLM model: %s", llmSpec.Model)
 	}

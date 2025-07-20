@@ -53,12 +53,60 @@ spec:
             description: KopilotSpec defines the desired state of Kopilot
             properties:
               knowledgeBase:
-                description: KnowledgeBaseSpec is a placeholder for Day 6.
+                description: KnowledgeBaseSpec is a placeholder based on the Milvus.
                 properties:
-                  configMapRef:
-                    description: ConfigMapRef references a ConfigMap containing knowledge
-                      base articles.
+                  address:
+                    description: Address is the URL of the milvus service.
                     type: string
+                  arkSpec:
+                    properties:
+                      apiKeySecretRef:
+                        description: |-
+                          APIKeySecretRef is a reference to a Kubernetes Secret.
+                          The secret must contain a key (e.g., 'apiKey') with the Ark API key.
+                        properties:
+                          key:
+                            description: Key within the Secret.
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace is the namespace where the Secret is located.
+                              If not specified, defaults to the same namespace as the Kopilot instance.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      modelName:
+                        default: doubao-embedding-large-text-250515
+                        description: ModelName is the specific Ark model to use.
+                        type: string
+                    required:
+                    - apiKeySecretRef
+                    - modelName
+                    type: object
+                  collectionName:
+                    description: CollectionName is the name of the collection to store
+                      the knowledge base.
+                    type: string
+                  dimension:
+                    description: Dimension is the dimension of the vectors.
+                    type: integer
+                  embeddingProvider:
+                    default: ark
+                    description: EmbeddingProvider is the provider for generating
+                      embeddings.
+                    enum:
+                    - ark
+                    type: string
+                required:
+                - address
+                - collectionName
+                - dimension
+                - embeddingProvider
                 type: object
               llm:
                 description: LLMSpec defines the AI configuration.

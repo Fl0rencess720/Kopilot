@@ -11,13 +11,14 @@ import (
 )
 
 type GeminiClient struct {
-	model    string
-	thinking bool
-	client   *genai.Client
-	language string
+	model     string
+	thinking  bool
+	client    *genai.Client
+	language  string
+	retriever *HybridRetriever
 }
 
-func NewGeminiClient(model, apiKey, language string, thinking bool) (*GeminiClient, error) {
+func NewGeminiClient(model, apiKey, language string, thinking bool, retriever *HybridRetriever) (*GeminiClient, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
 		APIKey: apiKey,
@@ -27,19 +28,20 @@ func NewGeminiClient(model, apiKey, language string, thinking bool) (*GeminiClie
 		return nil, err
 	}
 	return &GeminiClient{
-		model:    model,
-		client:   client,
-		thinking: thinking,
-		language: language,
+		model:     model,
+		client:    client,
+		thinking:  thinking,
+		language:  language,
+		retriever: retriever,
 	}, nil
 }
 
-func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
+func (c *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: g.client,
-		Model:  g.model,
+		Client: c.client,
+		Model:  c.model,
 		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: g.thinking,
+			IncludeThoughts: c.thinking,
 			ThinkingBudget:  nil,
 		},
 		ResponseSchema: KubernetesLogAnalyzeResponseSchema,
@@ -48,20 +50,25 @@ func (g *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs str
 		zap.L().Error("NewChatModel of gemini failed", zap.Error(err))
 		return "", err
 	}
-	chain := compose.NewChain[map[string]any, *schema.Message]()
-	chain.
-		AppendChatTemplate(KubernetesLogAnalyzeSystemPrompt).
-		AppendChatModel(cm)
+	var runnable compose.Runnable[map[string]any, *schema.Message]
 
-	runnable, err := chain.Compile(ctx)
-	if err != nil {
-		zap.L().Error("Compile chain failed", zap.Error(err))
-		return "", err
+	if c.retriever != nil {
+		runnable, err = newRunnableWithRetriever(ctx, cm, c.retriever)
+		if err != nil {
+			zap.L().Error("newChainWithRetriever failed", zap.Error(err))
+			return "", err
+		}
+	} else {
+		runnable, err = newRunnable(ctx, cm)
+		if err != nil {
+			zap.L().Error("newChain failed", zap.Error(err))
+			return "", err
+		}
 	}
 
 	input := map[string]any{
 		"logs": logs,
-		"lang": g.language,
+		"lang": c.language,
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {
