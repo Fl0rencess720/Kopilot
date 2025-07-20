@@ -10,20 +10,23 @@ import (
 )
 
 type DeepSeekClient struct {
-	model  string
-	apiKey string
+	model    string
+	apiKey   string
+	language string
 }
 
-func NewDeepSeekClient(model, apiKey string) (*DeepSeekClient, error) {
+func NewDeepSeekClient(model, apiKey, language string) (*DeepSeekClient, error) {
 	return &DeepSeekClient{
-		model:  model,
-		apiKey: apiKey}, nil
+		model:    model,
+		apiKey:   apiKey,
+		language: language,
+	}, nil
 }
 
-func (g *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
+func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
 	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
-		APIKey:             g.apiKey,
-		Model:              g.model,
+		APIKey:             c.apiKey,
+		Model:              c.model,
 		MaxTokens:          2000,
 		BaseURL:            "https://api.deepseek.com/beta",
 		ResponseFormatType: deepseek.ResponseFormatTypeJSONObject,
@@ -45,6 +48,7 @@ func (g *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs s
 
 	input := map[string]any{
 		"logs": logs,
+		"lang": c.language,
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {

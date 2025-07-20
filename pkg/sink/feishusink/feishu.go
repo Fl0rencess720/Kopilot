@@ -15,6 +15,40 @@ import (
 	"go.uber.org/zap"
 )
 
+type LLMContent struct {
+	Reason   string `json:"reason"`
+	Solution string `json:"solution"`
+}
+
+type BotMessage struct {
+	MsgType   string      `json:"msg_type"`
+	Content   interface{} `json:"content"`
+	Sign      string      `json:"sign,omitempty"`
+	Timestamp string      `json:"timestamp,omitempty"`
+}
+
+type PostContent struct {
+	Post struct {
+		ZhCn struct {
+			Title   string       `json:"title"`
+			Content [][]Elements `json:"content"`
+		} `json:"zh_cn"`
+	} `json:"post"`
+}
+
+type Elements struct {
+	Tag      string `json:"tag"`
+	Text     string `json:"text,omitempty"`
+	Href     string `json:"href,omitempty"`
+	UserID   string `json:"user_id,omitempty"`
+	Unescape bool   `json:"unescape,omitempty"`
+}
+
+type Response struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
 func GenSign(secret string, timestamp int64) (string, error) {
 	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
 
@@ -27,17 +61,6 @@ func GenSign(secret string, timestamp int64) (string, error) {
 	return signature, nil
 }
 
-type BotMessage struct {
-	MsgType   string      `json:"msg_type"`
-	Content   interface{} `json:"content"`
-	Sign      string      `json:"sign,omitempty"`
-	Timestamp string      `json:"timestamp,omitempty"`
-}
-
-type TextContent struct {
-	Text string `json:"text"`
-}
-
 func SendBotMessage(webhookURL, secret, namespace, podName, content string) error {
 	timestamp := time.Now().Unix()
 
@@ -47,15 +70,11 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 		return err
 	}
 
-	messageText := fmt.Sprintf("Namespace: %s\nPod: %s\n内容: %s", namespace, podName, content)
-
 	message := BotMessage{
 		Timestamp: strconv.FormatInt(timestamp, 10),
 		Sign:      signature,
-		MsgType:   "text",
-		Content: TextContent{
-			Text: messageText,
-		},
+		MsgType:   "post",
+		Content:   genPostContent(namespace, podName, content),
 	}
 
 	jsonData, err := json.Marshal(message)
@@ -95,10 +114,7 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 		return err
 	}
 
-	var response struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-	}
+	var response Response
 
 	if err := json.Unmarshal(body, &response); err != nil {
 		zap.L().Error("json unmarshal failed", zap.Error(err))
@@ -112,4 +128,37 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	}
 
 	return nil
+}
+
+func unmarshalLLMContent(content string) (LLMContent, error) {
+	var llmContent LLMContent
+	if err := json.Unmarshal([]byte(content), &llmContent); err != nil {
+		zap.L().Error("unmarshal LLM content failed", zap.Error(err))
+		return LLMContent{}, err
+	}
+	return llmContent, nil
+}
+
+func genPostContent(namespace, podName, content string) PostContent {
+	llmContent, err := unmarshalLLMContent(content)
+	if err != nil {
+		zap.L().Error("unmarshal LLM content failed", zap.Error(err))
+		return PostContent{}
+	}
+
+	postContent := PostContent{}
+	postContent.Post.ZhCn.Title = "Kopilot Bot Alert"
+	postContent.Post.ZhCn.Content = [][]Elements{
+		{
+			{
+				Tag:  "text",
+				Text: fmt.Sprintf("namespace: %s\npod: %s\n", namespace, podName),
+			},
+			{
+				Tag:  "text",
+				Text: fmt.Sprintf("reason: %s\nsolution: %s\n", llmContent.Reason, llmContent.Solution),
+			},
+		},
+	}
+	return postContent
 }

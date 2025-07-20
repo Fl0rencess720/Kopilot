@@ -75,6 +75,11 @@ type LLMSpec struct {
 	// +kubebuilder:default:="gemini"
 	Model string `json:"model"`
 
+	// Language specifies the language of the logs.
+	// +kubebuilder:validation:Enum=en;ch
+	// +kubebuilder:default:="en"
+	Language string `json:"language"`
+
 	// +optional
 	Gemini GeminiSpec `json:"gemini"`
 

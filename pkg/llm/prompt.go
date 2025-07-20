@@ -23,7 +23,7 @@ var (
         "solution": "error solution",  
         "sink": true  
         }`),
-		schema.UserMessage("日志内容：{{.logs}}"),
+		schema.UserMessage("日志内容：{{.logs}},返回结果的语言为：{{.lang}}"),
 	)
 
 	KubernetesLogAnalyzeResponseSchema = &openapi3.Schema{

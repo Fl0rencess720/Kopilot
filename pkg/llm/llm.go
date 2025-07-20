@@ -22,14 +22,14 @@ func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec k
 			zap.L().Error("unable to get LLM API key", zap.Error(err))
 			return nil, err
 		}
-		return NewGeminiClient(llmSpec.Gemini.ModelName, apikey, llmSpec.Gemini.Thinking)
+		return NewGeminiClient(llmSpec.Gemini.ModelName, apikey, llmSpec.Language, llmSpec.Gemini.Thinking)
 	case "deepseek":
 		apikey, err := utils.GetSecret(clientset, llmSpec.DeepSeek.APIKeySecretRef.Key, "default", llmSpec.DeepSeek.APIKeySecretRef.Name)
 		if err != nil {
 			zap.L().Error("unable to get LLM API key", zap.Error(err))
 			return nil, err
 		}
-		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey)
+		return NewDeepSeekClient(llmSpec.DeepSeek.ModelName, apikey, llmSpec.Language)
 	default:
 		return nil, fmt.Errorf("unsupported LLM model: %s", llmSpec.Model)
 	}

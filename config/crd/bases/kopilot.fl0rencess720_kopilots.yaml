@@ -63,6 +63,36 @@ spec:
               llm:
                 description: LLMSpec defines the AI configuration.
                 properties:
+                  deepseek:
+                    properties:
+                      apiKeySecretRef:
+                        description: |-
+                          APIKeySecretRef is a reference to a Kubernetes Secret.
+                          The secret must contain a key (e.g., 'apiKey') with the DeepSeek API key.
+                        properties:
+                          key:
+                            description: Key within the Secret.
+                            type: string
+                          name:
+                            description: Name of the Secret.
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace is the namespace where the Secret is located.
+                              If not specified, defaults to the same namespace as the Kopilot instance.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      modelName:
+                        default: deepseek-2.5-flash
+                        description: ModelName is the specific DeepSeek model to use.
+                        type: string
+                    required:
+                    - apiKeySecretRef
+                    - modelName
+                    type: object
                   gemini:
                     description: GeminiSpec defines Gemini-specific configuration.
                     properties:
@@ -76,6 +106,11 @@ spec:
                             type: string
                           name:
                             description: Name of the Secret.
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace is the namespace where the Secret is located.
+                              If not specified, defaults to the same namespace as the Kopilot instance.
                             type: string
                         required:
                         - key
@@ -94,11 +129,22 @@ spec:
                     - modelName
                     - thinking
                     type: object
+                  language:
+                    default: en
+                    description: Language specifies the language of the logs.
+                    enum:
+                    - en
+                    - ch
+                    type: string
                   model:
                     default: gemini
                     description: Model specifies the AI model to be used for analysis.
+                    enum:
+                    - gemini
+                    - deepseek
                     type: string
                 required:
+                - language
                 - model
                 type: object
               logSource:
@@ -153,6 +199,11 @@ spec:
                                 name:
                                   description: Name of the Secret.
                                   type: string
+                                namespace:
+                                  description: |-
+                                    Namespace is the namespace where the Secret is located.
+                                    If not specified, defaults to the same namespace as the Kopilot instance.
+                                  type: string
                               required:
                               - key
                               - name
@@ -167,6 +218,11 @@ spec:
                                   type: string
                                 name:
                                   description: Name of the Secret.
+                                  type: string
+                                namespace:
+                                  description: |-
+                                    Namespace is the namespace where the Secret is located.
+                                    If not specified, defaults to the same namespace as the Kopilot instance.
                                   type: string
                               required:
                               - key
