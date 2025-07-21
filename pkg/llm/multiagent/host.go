@@ -21,9 +21,10 @@ type LogMultiAgentConfig struct {
 	Autofixer   model.ToolCallingChatModel
 	Searcher    model.ToolCallingChatModel
 	Humanhelper model.ToolCallingChatModel
+	Retriever   *llm.HybridRetriever
 }
 
-func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec) (*LogMultiAgent, error) {
+func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec, retriever *llm.HybridRetriever) (*LogMultiAgent, error) {
 	maLLM, err := llm.NewLLMClient(ctx, clientset, llmSpec, nil)
 	if err != nil {
 		return nil, err
@@ -49,6 +50,7 @@ func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSp
 		Autofixer:   autofixer,
 		Searcher:    searcher,
 		Humanhelper: humanhelper,
+		Retriever:   retriever,
 	}
 	runnable, err := newGraphRunnable(ctx, &config)
 	if err != nil {

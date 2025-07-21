@@ -11,10 +11,11 @@ import (
 )
 
 type state struct {
-	originalInput string
-	autoFixResult string
-	searchResult  string
-	messages      []*schema.Message
+	originalInput    string
+	autoFixResult    string
+	searchResult     string
+	hasKnowledgeBase bool
+	messages         []*schema.Message
 }
 
 type HostDecision struct {
@@ -26,20 +27,25 @@ type HostDecision struct {
 }
 
 const (
-	nodeKeyHost              = "host"
-	nodeKeyAutoFixer         = "autofixer"
-	nodeKeySearcher          = "searcher"
-	nodeKeyHumanHelper       = "humanhelper"
-	nodeKeyHostToList        = "host_to_list"
-	nodeKeyAutoFixerToList   = "autofixer_to_list"
-	nodeKeySearcherToList    = "searcher_to_list"
-	nodeKeyHumanHelperToList = "humanhelper_to_list"
+	nodeKeyHost               = "host"
+	nodeKeyAutoFixer          = "autofixer"
+	nodeKeySearcher           = "searcher"
+	nodeKeyHumanHelper        = "humanhelper"
+	nodeKeyHostToList         = "host_to_list"
+	nodeKeyAutoFixerToList    = "autofixer_to_list"
+	nodeKeySearcherToList     = "searcher_to_list"
+	nodeKeyHumanHelperToList  = "humanhelper_to_list"
+	nodeKeyAutoFixerRetriever = "autofixer_retriever"
 )
 
 func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose.Runnable[[]*schema.Message, *schema.Message], error) {
+	hasKnowledgeBase := false
+	if config.Retriever != nil {
+		hasKnowledgeBase = true
+	}
 	graph := compose.NewGraph[[]*schema.Message, *schema.Message](
 		compose.WithGenLocalState(func(ctx context.Context) *state {
-			return &state{}
+			return &state{hasKnowledgeBase: hasKnowledgeBase}
 		}),
 	)
 
@@ -72,17 +78,43 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 	_ = graph.AddLambdaNode(nodeKeySearcherToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyHumanHelperToList, compose.ToList[*schema.Message]())
 
-	err := graph.AddEdge(compose.START, nodeKeyHost)
+	ragChain := compose.NewChain[*schema.Message, *schema.Message]()
+	ragChain.
+		AppendLambda(compose.InvokableLambda(func(_ context.Context, input *schema.Message) (string, error) {
+			var originalInput string
+			if err := compose.ProcessState(ctx, func(ctx context.Context, state *state) error {
+				originalInput = state.originalInput
+				return nil
+			}); err != nil {
+				return "", err
+			}
+			return originalInput, nil
+		})).
+		AppendRetriever(config.Retriever).
+		AppendLambda(compose.InvokableLambda(func(_ context.Context, docs []*schema.Document) (*schema.Message, error) {
+			var contents []string
+			for _, doc := range docs {
+				contents = append(contents, doc.Content)
+			}
+			knowledge := strings.Join(contents, "\n")
+			return &schema.Message{Content: knowledge}, nil
+		}))
+
+	_ = graph.AddGraphNode(nodeKeyAutoFixerRetriever, ragChain)
+
+	_ = graph.AddEdge(compose.START, nodeKeyHost)
 
 	_ = graph.AddBranch(nodeKeyHost, compose.NewGraphBranch(hostBranchCondition, map[string]bool{
-		nodeKeyHostToList:        true,
-		nodeKeyAutoFixerToList:   true,
-		nodeKeySearcherToList:    true,
-		nodeKeyHumanHelperToList: true,
-		compose.END:              true,
+		nodeKeyHostToList:         true,
+		nodeKeyAutoFixerToList:    true,
+		nodeKeySearcherToList:     true,
+		nodeKeyHumanHelperToList:  true,
+		nodeKeyAutoFixerRetriever: true,
+		compose.END:               true,
 	}))
 
 	_ = graph.AddEdge(nodeKeyAutoFixerToList, nodeKeyAutoFixer)
+	_ = graph.AddEdge(nodeKeyAutoFixerRetriever, nodeKeyAutoFixerToList)
 	_ = graph.AddBranch(nodeKeyAutoFixer, compose.NewGraphBranch(autoFixerBranchCondition, map[string]bool{
 		nodeKeyHostToList: true,
 	}))
@@ -130,10 +162,19 @@ func hostPreHandle(ctx context.Context, input []*schema.Message, state *state) (
 }
 
 func autoFixerPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
-	return []*schema.Message{
-		AutoFixerSystemPrompt,
-		schema.UserMessage(fmt.Sprintf("请对以下K8s问题进行自动修复：\n%s", state.originalInput)),
-	}, nil
+	msg := []*schema.Message{}
+	if state.hasKnowledgeBase {
+		msg = []*schema.Message{
+			AutoFixerSystemPrompt,
+			schema.UserMessage(fmt.Sprintf("请参照运维文档对以下K8s问题进行自动修复：\n%s\n运维文档：\n%s\n", state.originalInput, input[0].Content)),
+		}
+	} else {
+		msg = []*schema.Message{
+			AutoFixerSystemPrompt,
+			schema.UserMessage(fmt.Sprintf("请对以下K8s问题进行自动修复：\n%s", state.originalInput)),
+		}
+	}
+	return msg, nil
 }
 
 func searcherPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
@@ -160,6 +201,16 @@ func hostBranchCondition(ctx context.Context, msg *schema.Message) (string, erro
 	if err := json.Unmarshal([]byte(msg.Content), &decision); err != nil {
 		content := strings.ToLower(msg.Content)
 		if strings.Contains(content, "autofixer") {
+			hasKnowledgeBase := false
+			if err := compose.ProcessState(ctx, func(ctx context.Context, state *state) error {
+				hasKnowledgeBase = state.hasKnowledgeBase
+				return nil
+			}); err != nil {
+				return "", err
+			}
+			if hasKnowledgeBase {
+				return nodeKeyAutoFixerRetriever, nil
+			}
 			return nodeKeyHostToList, nil
 		} else if strings.Contains(content, "searcher") {
 			return nodeKeySearcherToList, nil
