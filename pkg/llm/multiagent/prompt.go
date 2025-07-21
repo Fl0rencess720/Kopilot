@@ -1,66 +1,13 @@
-package llm
+package multiagent
 
 import (
-	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 var (
-	KubernetesLogAnalyzeSystemPrompt = prompt.FromMessages(
-		schema.GoTemplate,
-		schema.SystemMessage(
-			`你是一个Kubernetes运维专家,请根据输入的日志内容评估日志的严重程度。
-		对于严重程度高的日志，请给出原因分析和解决方案，并判断是否需要上报。  
-		你需要从运维文档找到对于给出日志中所显示的问题的解决方案，若运维文档为空或没有找到合适的解决方案，
-		则由你自己给出合适的解决方案。
-
-        以下是返回结果的格式要求：  
-  
-        返回结果应该仅以JSON格式返回;
-        对于每个日志项，返回字段包括：  
-            reason: 原因分析  
-            solution: 解决方案  
-            sink: 是否需要上报,如果需要上报,值为true,否则为false  
-        请根据以下示例格式返回结果：  
-        {  
-        "reason": "error reason",  
-        "solution": "error solution",  
-        "sink": true  
-        }
-		你的回答应使用的语言为：{{.lang}}
-		以下是日志内容和运维文档:`),
-		schema.UserMessage("{{.logs}}"),
-	)
-
-	KubernetesLogAnalyzeResponseSchema = &openapi3.Schema{
-		Type: "object",
-		Properties: map[string]*openapi3.SchemaRef{
-			"reason": {
-				Value: &openapi3.Schema{
-					Type: "string",
-				},
-			},
-			"solution": {
-				Value: &openapi3.Schema{
-					Type: "string",
-				},
-			},
-			"sink": {
-				Value: &openapi3.Schema{
-					Type: "boolean",
-				},
-			},
-		},
-		Required: []string{"reason", "solution", "sink"},
-	}
-)
-
-var (
-	SupervisorDefaultPrompt = prompt.FromMessages(
-		schema.GoTemplate,
-		schema.SystemMessage(
-			`你是一个k8s集群的负责人,请根据用户输入的信息,从options中选择下一个行动:  
+	HostSystemPrompt = schema.SystemMessage(
+		`你是一个k8s集群的负责人,请根据用户输入的信息,从options中选择下一个行动:  
 		返回结果应该仅以JSON格式返回;
 		对于每个日志项，返回字段包括：  
 			option: 下一步行动
@@ -91,9 +38,9 @@ var (
 		Searcher: 网络搜索,当自动修复失败后,请使用此选项,此时context字段必须为空
 		HumanHelper:  寻求人类帮助,当自动修复失败且已经进行过网络搜索后,请将自动修复失败所返回的上下文和网络搜索结果整理后写入context字段
 		Finish: 任务结束,当你认为问题已经解决时,请使用该选项,例如当自动修复成功或成功寻求人类帮助后,则可以选择Finish
-		`))
+		`)
 
-	SupervisorResponseSchema = &openapi3.Schema{
+	HostResponseSchema = &openapi3.Schema{
 		Type: "object",
 		Properties: map[string]*openapi3.SchemaRef{
 			"option": {
@@ -121,4 +68,22 @@ var (
 		},
 		Required: []string{"option", "context"},
 	}
+)
+
+var (
+	AutoFixerSystemPrompt = schema.SystemMessage(
+		`你是一个K8s自动修复专家。请分析问题并尝试自动修复。
+		如果修复成功，返回'修复成功：[具体修复内容]';
+		如果修复失败，返回'修复失败：[失败原因]'。
+		`)
+
+	SearcherSystemPrompt = schema.SystemMessage(
+		`你是一个网络搜索专家。
+		请搜索相关的K8s问题解决方案。
+		返回格式：'搜索结果：[相关解决方案]'。
+		`)
+	HumanHelperSystemPrompt = schema.SystemMessage(
+		`你是一个文档撰写专家。
+		请基于原始日志及自动修复失败和搜索结果，生成详细的问题文档供人工处理。
+		`)
 )
