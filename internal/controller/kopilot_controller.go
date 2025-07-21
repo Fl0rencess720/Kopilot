@@ -125,9 +125,10 @@ func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger,
 		if pod.Kind == "Kopilot" {
 			continue
 		}
+		// fmt.Println("pod", pod.Name, "namespace", pod.Namespace, "status", pod.Status.Phase, "condition", pod.Status.Conditions)
 		if !utils.CheckPodHealthyStatus(pod.Status) {
+
 			logs := ""
-			l.Info("Found unhealthy pod", "name", pod.Name, "namespace", pod.Namespace, "phase", pod.Status.Phase)
 			switch logSource.Type {
 			case "Kubernetes":
 				logs, err = utils.GetPodLogsFromKubernetes(r.Clientset, pod.Name, pod.Namespace)
@@ -143,7 +144,7 @@ func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger,
 				}
 			default:
 				l.Error(fmt.Errorf("unknown log source type: %s", logSource.Type), "unable to get pod logs")
-				return nil
+				continue
 			}
 
 			unhealthyPods = append(unhealthyPods, UnHealthyPod{
