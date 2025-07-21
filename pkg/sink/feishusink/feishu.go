@@ -12,7 +12,10 @@ import (
 	"strconv"
 	"time"
 
+	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
+	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
 	"go.uber.org/zap"
+	"k8s.io/client-go/kubernetes"
 )
 
 type LLMContent struct {
@@ -49,22 +52,30 @@ type Response struct {
 	Msg  string `json:"msg"`
 }
 
-func GenSign(secret string, timestamp int64) (string, error) {
-	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
-
-	h := hmac.New(sha256.New, []byte(stringToSign))
-
-	signatureBytes := h.Sum(nil)
-
-	signature := base64.StdEncoding.EncodeToString(signatureBytes)
-
-	return signature, nil
+type FeishuSink struct {
+	webhookURL string
+	secret     string
 }
 
-func SendBotMessage(webhookURL, secret, namespace, podName, content string) error {
+func NewFeishuSink(clientset kubernetes.Interface, feishuSink kopilotv1.FeishuSink) (*FeishuSink, error) {
+	webhookURL, err := utils.GetSecret(clientset, feishuSink.WebhookSecretRef.Key, feishuSink.WebhookSecretRef.Namespace, feishuSink.WebhookSecretRef.Name)
+	if err != nil {
+		return nil, err
+	}
+	secret, err := utils.GetSecret(clientset, feishuSink.SignatureSecretRef.Key, feishuSink.SignatureSecretRef.Namespace, feishuSink.WebhookSecretRef.Name)
+	if err != nil {
+		return nil, err
+	}
+	return &FeishuSink{
+		webhookURL: webhookURL,
+		secret:     secret,
+	}, nil
+}
+
+func (s *FeishuSink) SendBotMessage(namespace, podName, content string) error {
 	timestamp := time.Now().Unix()
 
-	signature, err := GenSign(secret, timestamp)
+	signature, err := genSign(s.secret, timestamp)
 	if err != nil {
 		zap.L().Error("gen signature failed", zap.Error(err))
 		return err
@@ -83,7 +94,7 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 		return err
 	}
 
-	req, err := http.NewRequest("POST", webhookURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", s.webhookURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		zap.L().Error("http.NewRequest failed", zap.Error(err))
 		return err
@@ -128,6 +139,18 @@ func SendBotMessage(webhookURL, secret, namespace, podName, content string) erro
 	}
 
 	return nil
+}
+
+func genSign(secret string, timestamp int64) (string, error) {
+	stringToSign := fmt.Sprintf("%d\n%s", timestamp, secret)
+
+	h := hmac.New(sha256.New, []byte(stringToSign))
+
+	signatureBytes := h.Sum(nil)
+
+	signature := base64.StdEncoding.EncodeToString(signatureBytes)
+
+	return signature, nil
 }
 
 func unmarshalLLMContent(content string) (LLMContent, error) {

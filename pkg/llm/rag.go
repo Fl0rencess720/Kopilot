@@ -32,7 +32,7 @@ type HybridRetriever struct {
 	collectionName string
 }
 
-func NewMilvusClient(ctx context.Context, clientset kubernetes.Interface, knowledgeBase kopilotv1.KnowledgeBaseSpec) (*milvusclient.Client, error) {
+func newMilvusClient(ctx context.Context, clientset kubernetes.Interface, knowledgeBase kopilotv1.KnowledgeBaseSpec) (*milvusclient.Client, error) {
 
 	username, err := utils.GetSecret(clientset, knowledgeBase.UsernameSecretRef.Key, knowledgeBase.UsernameSecretRef.Namespace, knowledgeBase.UsernameSecretRef.Name)
 	if err != nil {
@@ -56,9 +56,17 @@ func NewMilvusClient(ctx context.Context, clientset kubernetes.Interface, knowle
 	return client, nil
 }
 
-func NewHybridRetriever(client *milvusclient.Client, embedder Embedder, knowledgeBase kopilotv1.KnowledgeBaseSpec) (*HybridRetriever, error) {
+func NewHybridRetriever(ctx context.Context, clientset kubernetes.Interface, knowledgeBase kopilotv1.KnowledgeBaseSpec) (*HybridRetriever, error) {
+	embedder, err := newEmbedder(ctx, clientset, knowledgeBase)
+	if err != nil {
+		return nil, err
+	}
+	milvusClient, err := newMilvusClient(ctx, clientset, knowledgeBase)
+	if err != nil {
+		return nil, err
+	}
 	hr := &HybridRetriever{
-		client:         client,
+		client:         milvusClient,
 		embedder:       embedder,
 		topK:           knowledgeBase.TopK,
 		collectionName: knowledgeBase.CollectionName,
@@ -69,7 +77,7 @@ func NewHybridRetriever(client *milvusclient.Client, embedder Embedder, knowledg
 	return hr, nil
 }
 
-func NewEmbedder(ctx context.Context, clientset kubernetes.Interface, knowledgeBaseSpec kopilotv1.KnowledgeBaseSpec) (Embedder, error) {
+func newEmbedder(ctx context.Context, clientset kubernetes.Interface, knowledgeBaseSpec kopilotv1.KnowledgeBaseSpec) (Embedder, error) {
 	switch knowledgeBaseSpec.EmbeddingProvider {
 	case "ark":
 		apikey, err := utils.GetSecret(clientset, knowledgeBaseSpec.ArkSpec.APIKeySecretRef.Key, "default", knowledgeBaseSpec.ArkSpec.APIKeySecretRef.Name)
@@ -150,7 +158,7 @@ func (hr *HybridRetriever) Retrieve(ctx context.Context, query string, opts ...r
 }
 
 func (hr *HybridRetriever) LoadMilvus(ctx context.Context) error {
-	loadTask, err := hr.client.LoadCollection(ctx, milvusclient.NewLoadCollectionOption("hybrid_test_collection"))
+	loadTask, err := hr.client.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(hr.collectionName))
 	if err != nil {
 		return err
 	}
