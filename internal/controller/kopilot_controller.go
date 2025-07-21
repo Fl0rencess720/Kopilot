@@ -24,6 +24,7 @@ import (
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
 	"github.com/Fl0rencess720/Kopilot/pkg/llm"
+	"github.com/Fl0rencess720/Kopilot/pkg/llm/multiagent"
 	"github.com/Fl0rencess720/Kopilot/pkg/sink/feishusink"
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
@@ -163,55 +164,63 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 
 	for _, pod := range unhealthyPods {
 		var c llm.LLMClient
-		if knowledgeBase != nil {
-			embedder, err := llm.NewEmbedder(ctx, r.Clientset, *knowledgeBase)
-			if err != nil {
-				l.Error(err, "unable to create embedder")
-				return err
+		if llmSpec.WorkingMode == "single" {
+			if knowledgeBase != nil {
+				embedder, err := llm.NewEmbedder(ctx, r.Clientset, *knowledgeBase)
+				if err != nil {
+					l.Error(err, "unable to create embedder")
+					return err
+				}
+				milvusClient, err := llm.NewMilvusClient(ctx, r.Clientset, *knowledgeBase)
+				if err != nil {
+					l.Error(err, "unable to create milvus client")
+					return err
+				}
+				retriever, err := llm.NewHybridRetriever(milvusClient, embedder, *knowledgeBase)
+				if err != nil {
+					l.Error(err, "unable to create hybrid retriever")
+					return err
+				}
+				c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, retriever)
+				if err != nil {
+					l.Error(err, "unable to create LLM client")
+					return err
+				}
+			} else {
+				c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, nil)
+				if err != nil {
+					l.Error(err, "unable to create LLM client")
+					return err
+				}
 			}
-			milvusClient, err := llm.NewMilvusClient(ctx, r.Clientset, *knowledgeBase)
-			if err != nil {
-				l.Error(err, "unable to create milvus client")
-				return err
-			}
-			retriever, err := llm.NewHybridRetriever(milvusClient, embedder, *knowledgeBase)
-			if err != nil {
-				l.Error(err, "unable to create hybrid retriever")
-				return err
-			}
-			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, retriever)
-			if err != nil {
-				l.Error(err, "unable to create LLM client")
-				return err
-			}
-		} else {
-			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, nil)
-			if err != nil {
-				l.Error(err, "unable to create LLM client")
-				return err
-			}
-		}
 
-		result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
-		if err != nil {
-			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
-			return err
+			result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
+			if err != nil {
+				l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
+				return err
+			}
+			signatureSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.SignatureSecretRef.Key, "default", sinks[0].Feishu.SignatureSecretRef.Name)
+			if err != nil {
+				l.Error(err, "unable to get signature secret")
+				return err
+			}
+			webhookURL, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
+			if err != nil {
+				l.Error(err, "unable to get webhook secret")
+				return err
+			}
+			if err := feishusink.SendBotMessage(webhookURL, signatureSecret, pod.Namespace, pod.Name, result); err != nil {
+				l.Error(err, "unable to send result to sink")
+				return err
+			}
+		} else if llmSpec.WorkingMode == "multi" {
+			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, llmSpec)
+			if err != nil {
+				l.Error(err, "unable to create multiagent")
+				return err
+			}
+			ma.Run(ctx, pod.Log)
 		}
-		signatureSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.SignatureSecretRef.Key, "default", sinks[0].Feishu.SignatureSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get signature secret")
-			return err
-		}
-		webhookURL, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get webhook secret")
-			return err
-		}
-		if err := feishusink.SendBotMessage(webhookURL, signatureSecret, pod.Namespace, pod.Name, result); err != nil {
-			l.Error(err, "unable to send result to sink")
-			return err
-		}
-
 	}
 	return nil
 }

@@ -69,7 +69,10 @@ type LokiSource struct {
 
 // LLMSpec defines the AI configuration.
 type LLMSpec struct {
-
+	// WorkingMode specifies the AI working mode.
+	// +kubebuilder:validation:Enum=single;multi
+	// +kubebuilder:default:="single"
+	WorkingMode string `json:"workingMode"`
 	// Model specifies the AI model to be used for analysis.
 	// +kubebuilder:validation:Enum=gemini;deepseek
 	// +kubebuilder:default:="gemini"

@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino-ext/components/model/deepseek"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
 )
 
@@ -25,13 +27,7 @@ func NewDeepSeekClient(model, apiKey, language string, retriever *HybridRetrieve
 }
 
 func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
-	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
-		APIKey:             c.apiKey,
-		Model:              c.model,
-		MaxTokens:          2000,
-		BaseURL:            "https://api.deepseek.com/beta",
-		ResponseFormatType: deepseek.ResponseFormatTypeJSONObject,
-	})
+	cm, err := c.GetModel(ctx, KubernetesLogAnalyzeResponseSchema)
 	if err != nil {
 		zap.L().Error("NewChatModel of deepseek failed", zap.Error(err))
 		return "", err
@@ -63,4 +59,22 @@ func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs s
 		return "", err
 	}
 	return result.Content, nil
+}
+
+func (c *DeepSeekClient) GetModel(ctx context.Context, responseSchema *openapi3.Schema) (model.ToolCallingChatModel, error) {
+	responseFormatType := deepseek.ResponseFormatTypeText
+	if responseSchema != nil {
+		responseFormatType = deepseek.ResponseFormatTypeJSONObject
+	}
+	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
+		APIKey:             c.apiKey,
+		Model:              c.model,
+		MaxTokens:          2000,
+		BaseURL:            "https://api.deepseek.com/beta",
+		ResponseFormatType: deepseek.ResponseFormatType(responseFormatType),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cm, nil
 }

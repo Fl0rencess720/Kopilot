@@ -3,9 +3,12 @@ package multiagent
 import (
 	"context"
 
+	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
+	"github.com/Fl0rencess720/Kopilot/pkg/llm"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"k8s.io/client-go/kubernetes"
 )
 
 type LogMultiAgent struct {
@@ -20,8 +23,27 @@ type LogMultiAgentConfig struct {
 	Humanhelper model.ToolCallingChatModel
 }
 
-func NewLogMultiAgent(host model.ToolCallingChatModel, autofixer model.ToolCallingChatModel, searcher model.ToolCallingChatModel, humanhelper model.ToolCallingChatModel) (*LogMultiAgent, error) {
-	ctx := context.Background()
+func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec) (*LogMultiAgent, error) {
+	maLLM, err := llm.NewLLMClient(ctx, clientset, llmSpec, nil)
+	if err != nil {
+		return nil, err
+	}
+	host, err := maLLM.GetModel(ctx, HostResponseSchema)
+	if err != nil {
+		return nil, err
+	}
+	autofixer, err := maLLM.GetModel(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	searcher, err := maLLM.GetModel(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	humanhelper, err := maLLM.GetModel(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 	config := LogMultiAgentConfig{
 		Host:        host,
 		Autofixer:   autofixer,
@@ -37,4 +59,15 @@ func NewLogMultiAgent(host model.ToolCallingChatModel, autofixer model.ToolCalli
 		runnable: runnable,
 	}
 	return ma, nil
+}
+
+func (ma *LogMultiAgent) Run(ctx context.Context, logs string) error {
+	in := []*schema.Message{{
+		Content: logs,
+	}}
+	_, err := ma.runnable.Invoke(ctx, in)
+	if err != nil {
+		return err
+	}
+	return nil
 }

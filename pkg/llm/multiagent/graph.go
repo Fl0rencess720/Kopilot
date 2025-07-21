@@ -43,56 +43,6 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 		}),
 	)
 
-	hostPreHandle := func(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
-		if len(input) > 0 {
-			state.originalInput = input[0].Content
-		}
-
-		contextInfo := ""
-		if state.autoFixResult != "" {
-			contextInfo += fmt.Sprintf("AutoFix结果: %s\n", state.autoFixResult)
-		}
-		if state.searchResult != "" {
-			contextInfo += fmt.Sprintf("Search结果: %s\n", state.searchResult)
-		}
-
-		userMessage := state.originalInput
-		if contextInfo != "" {
-			userMessage = fmt.Sprintf("%s\n\n历史上下文:\n%s", state.originalInput, contextInfo)
-		}
-
-		return []*schema.Message{
-			HostSystemPrompt,
-			schema.UserMessage(userMessage),
-		}, nil
-	}
-
-	autoFixerPreHandle := func(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
-		return []*schema.Message{
-			AutoFixerSystemPrompt,
-			schema.UserMessage(fmt.Sprintf("请对以下K8s问题进行自动修复：\n%s", state.originalInput)),
-		}, nil
-	}
-
-	searcherPreHandle := func(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
-		return []*schema.Message{
-			SearcherSystemPrompt,
-			schema.UserMessage(fmt.Sprintf("请搜索以下K8s问题的解决方案：\n原始问题：%s\nAutoFix失败结果：%s", state.originalInput, state.autoFixResult)),
-		}, nil
-	}
-
-	humanHelperPreHandle := func(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
-		return []*schema.Message{
-			HumanHelperSystemPrompt,
-			schema.UserMessage(fmt.Sprintf(`请生成问题处理文档：  
-			原始问题：%s  
-			自动修复结果：%s    
-			搜索结果：%s  
-			
-			请生成包含问题描述、失败分析、建议解决方案的完整文档。`, state.originalInput, state.autoFixResult, state.searchResult)),
-		}, nil
-	}
-
 	_ = graph.AddChatModelNode(nodeKeyHost, config.Host,
 		compose.WithStatePreHandler(hostPreHandle),
 		compose.WithNodeName(nodeKeyHost))
@@ -117,55 +67,12 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 		compose.WithStatePreHandler(humanHelperPreHandle),
 		compose.WithNodeName(nodeKeyHumanHelper))
 
-	// 添加转换节点
 	_ = graph.AddLambdaNode(nodeKeyHostToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyAutoFixerToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeySearcherToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyHumanHelperToList, compose.ToList[*schema.Message]())
 
-	// Host后的分支条件：解析JSON决策
-	hostBranchCondition := func(ctx context.Context, msg *schema.Message) (string, error) {
-		var decision HostDecision
-		if err := json.Unmarshal([]byte(msg.Content), &decision); err != nil {
-			// 如果JSON解析失败，尝试从文本中提取option
-			content := strings.ToLower(msg.Content)
-			if strings.Contains(content, "autofixer") {
-				return nodeKeyHostToList, nil
-			} else if strings.Contains(content, "searcher") {
-				return nodeKeySearcherToList, nil
-			} else if strings.Contains(content, "humanhelper") {
-				return nodeKeyHumanHelper, nil
-			} else {
-				return compose.END, nil
-			}
-		}
-
-		switch decision.Option {
-		case "AutoFixer":
-			return nodeKeyAutoFixerToList, nil
-		case "Searcher":
-			return nodeKeySearcherToList, nil
-		case "HumanHelper":
-			return nodeKeyHumanHelperToList, nil
-		case "Finish":
-			return compose.END, nil
-		default:
-			return compose.END, nil
-		}
-	}
-
-	autoFixerBranchCondition := func(ctx context.Context, msg *schema.Message) (string, error) {
-		if strings.Contains(strings.ToLower(msg.Content), "修复成功") {
-			return nodeKeyHostToList, nil
-		}
-		return nodeKeyHostToList, nil
-	}
-
-	searcherBranchCondition := func(ctx context.Context, msg *schema.Message) (string, error) {
-		return nodeKeyHostToList, nil
-	}
-
-	_ = graph.AddEdge(compose.START, nodeKeyHost)
+	err := graph.AddEdge(compose.START, nodeKeyHost)
 
 	_ = graph.AddBranch(nodeKeyHost, compose.NewGraphBranch(hostBranchCondition, map[string]bool{
 		nodeKeyHostToList:        true,
@@ -196,4 +103,94 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 	}
 
 	return runnable, nil
+}
+
+func hostPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	if len(input) > 0 {
+		state.originalInput = input[0].Content
+	}
+
+	contextInfo := ""
+	if state.autoFixResult != "" {
+		contextInfo += fmt.Sprintf("AutoFix结果: %s\n", state.autoFixResult)
+	}
+	if state.searchResult != "" {
+		contextInfo += fmt.Sprintf("Search结果: %s\n", state.searchResult)
+	}
+
+	userMessage := state.originalInput
+	if contextInfo != "" {
+		userMessage = fmt.Sprintf("%s\n\n历史上下文:\n%s", state.originalInput, contextInfo)
+	}
+
+	return []*schema.Message{
+		HostSystemPrompt,
+		schema.UserMessage(userMessage),
+	}, nil
+}
+
+func autoFixerPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	return []*schema.Message{
+		AutoFixerSystemPrompt,
+		schema.UserMessage(fmt.Sprintf("请对以下K8s问题进行自动修复：\n%s", state.originalInput)),
+	}, nil
+}
+
+func searcherPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	return []*schema.Message{
+		SearcherSystemPrompt,
+		schema.UserMessage(fmt.Sprintf("请搜索以下K8s问题的解决方案：\n原始问题：%s\nAutoFix失败结果：%s", state.originalInput, state.autoFixResult)),
+	}, nil
+}
+
+func humanHelperPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	return []*schema.Message{
+		HumanHelperSystemPrompt,
+		schema.UserMessage(fmt.Sprintf(`请生成问题处理文档：  
+			原始问题：%s  
+			自动修复结果：%s    
+			搜索结果：%s  
+			
+			请生成包含问题描述、失败分析、建议解决方案的完整文档。`, state.originalInput, state.autoFixResult, state.searchResult)),
+	}, nil
+}
+
+func hostBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
+	var decision HostDecision
+	if err := json.Unmarshal([]byte(msg.Content), &decision); err != nil {
+		content := strings.ToLower(msg.Content)
+		if strings.Contains(content, "autofixer") {
+			return nodeKeyHostToList, nil
+		} else if strings.Contains(content, "searcher") {
+			return nodeKeySearcherToList, nil
+		} else if strings.Contains(content, "humanhelper") {
+			return nodeKeyHumanHelper, nil
+		} else {
+			return compose.END, nil
+		}
+	}
+
+	switch decision.Option {
+	case "AutoFixer":
+		return nodeKeyAutoFixerToList, nil
+	case "Searcher":
+		return nodeKeySearcherToList, nil
+	case "HumanHelper":
+		return nodeKeyHumanHelperToList, nil
+	case "Finish":
+		return compose.END, nil
+	default:
+		return compose.END, nil
+	}
+}
+
+func autoFixerBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
+	if strings.Contains(strings.ToLower(msg.Content), "修复成功") {
+		return nodeKeyHostToList, nil
+	}
+	return nodeKeyHostToList, nil
+}
+
+func searcherBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
+	return nodeKeyHostToList, nil
 }
