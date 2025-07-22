@@ -203,8 +203,18 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				l.Error(err, "unable to create multiagent")
 				return err
 			}
-			if err := ma.Run(ctx, pod.Log); err != nil {
+			result, err := ma.Run(ctx, pod.Log)
+			if err != nil {
 				l.Error(err, "unable to run multiagent")
+				return err
+			}
+			sink, err := feishusink.NewFeishuSink(r.Clientset, *sinks[0].Feishu)
+			if err != nil {
+				l.Error(err, "unable to create feishu sink")
+				return err
+			}
+			if err := sink.SendBotMessage(pod.Namespace, pod.Name, result); err != nil {
+				l.Error(err, "unable to send result to feishu")
 				return err
 			}
 		}

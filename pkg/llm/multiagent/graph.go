@@ -15,6 +15,7 @@ type state struct {
 	originalInput    string
 	autoFixResult    string
 	searchResult     string
+	humanHelpResult  string
 	hasKnowledgeBase bool
 	messages         []*schema.Message
 	language         string
@@ -38,20 +39,29 @@ const (
 	nodeKeySearcherToList     = "searcher_to_list"
 	nodeKeyHumanHelperToList  = "humanhelper_to_list"
 	nodeKeyAutoFixerRetriever = "autofixer_retriever"
+	nodeKeyFinish             = "finish"
 )
 
-func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose.Runnable[[]*schema.Message, *schema.Message], error) {
-
-	autoFixNode, autoFixOpts, err := creatAutoFixNode(ctx, config.Autofixer, config.dynamicClient)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create auto fix node: %w", err)
-	}
-
+func buildGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose.Runnable[[]*schema.Message, *SinkMessageContent], error) {
 	hasKnowledgeBase := false
 	if config.Retriever != nil {
 		hasKnowledgeBase = true
 	}
-	graph := compose.NewGraph[[]*schema.Message, *schema.Message](
+
+	autoFixerAgent, autoFixerOpts, err := newAutoFixerAgent(ctx, config.Autofixer, config.dynamicClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auto fix node: %w", err)
+	}
+	searcherAgent, searcherOpts, err := newSearcherAgent(ctx, config.Searcher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create searcher node: %w", err)
+	}
+	humanHelperAgent, humanHelperOpts, err := newHumanHelperAgent(ctx, config.Humanhelper)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create human helper node: %w", err)
+	}
+
+	graph := compose.NewGraph[[]*schema.Message, *SinkMessageContent](
 		compose.WithGenLocalState(func(ctx context.Context) *state {
 			return &state{
 				hasKnowledgeBase: hasKnowledgeBase,
@@ -64,30 +74,32 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 		compose.WithStatePreHandler(hostPreHandle),
 		compose.WithNodeName(nodeKeyHost))
 
-	autoFixOpts = append(autoFixOpts, compose.WithStatePreHandler(autoFixerPreHandle),
+	autoFixerOpts = append(autoFixerOpts, compose.WithStatePreHandler(autoFixerPreHandle),
 		compose.WithStatePostHandler(func(ctx context.Context, output *schema.Message, state *state) (*schema.Message, error) {
 			state.autoFixResult = output.Content
 			return output, nil
 		}),
 		compose.WithNodeName(nodeKeyAutoFixer))
-	_ = graph.AddGraphNode(nodeKeyAutoFixer, autoFixNode, autoFixOpts...)
+	_ = graph.AddGraphNode(nodeKeyAutoFixer, autoFixerAgent, autoFixerOpts...)
 
-	_ = graph.AddChatModelNode(nodeKeySearcher, config.Searcher,
-		compose.WithStatePreHandler(searcherPreHandle),
+	searcherOpts = append(searcherOpts, compose.WithStatePreHandler(searcherPreHandle),
 		compose.WithStatePostHandler(func(ctx context.Context, output *schema.Message, state *state) (*schema.Message, error) {
 			state.searchResult = output.Content
 			return output, nil
 		}),
 		compose.WithNodeName(nodeKeySearcher))
+	_ = graph.AddGraphNode(nodeKeySearcher, searcherAgent, searcherOpts...)
 
-	_ = graph.AddChatModelNode(nodeKeyHumanHelper, config.Searcher,
-		compose.WithStatePreHandler(humanHelperPreHandle),
+	humanHelperOpts = append(humanHelperOpts, compose.WithStatePreHandler(humanHelperPreHandle),
 		compose.WithNodeName(nodeKeyHumanHelper))
+
+	_ = graph.AddGraphNode(nodeKeyHumanHelper, humanHelperAgent, humanHelperOpts...)
 
 	_ = graph.AddLambdaNode(nodeKeyHostToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyAutoFixerToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeySearcherToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyHumanHelperToList, compose.ToList[*schema.Message]())
+	_ = graph.AddLambdaNode(nodeKeyFinish, compose.InvokableLambda(buildSinkMsg))
 
 	ragChain, err := newRAGChain(ctx, config.Retriever)
 	if err != nil {
@@ -104,23 +116,22 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 		nodeKeySearcherToList:     true,
 		nodeKeyHumanHelperToList:  true,
 		nodeKeyAutoFixerRetriever: true,
-		compose.END:               true,
+		nodeKeyFinish:             true,
 	}))
 
-	_ = graph.AddEdge(nodeKeyAutoFixerToList, nodeKeyAutoFixer)
-	_ = graph.AddEdge(nodeKeyAutoFixerRetriever, nodeKeyAutoFixerToList)
-	_ = graph.AddBranch(nodeKeyAutoFixer, compose.NewGraphBranch(autoFixerBranchCondition, map[string]bool{
-		nodeKeyHostToList: true,
-	}))
 	_ = graph.AddEdge(nodeKeyHostToList, nodeKeyHost)
 
-	_ = graph.AddEdge(nodeKeySearcherToList, nodeKeySearcher)
-	_ = graph.AddBranch(nodeKeySearcher, compose.NewGraphBranch(searcherBranchCondition, map[string]bool{
-		nodeKeyHostToList: true,
-	}))
+	_ = graph.AddEdge(nodeKeyAutoFixerRetriever, nodeKeyAutoFixerToList)
+	_ = graph.AddEdge(nodeKeyAutoFixerToList, nodeKeyAutoFixer)
+	_ = graph.AddEdge(nodeKeyAutoFixer, nodeKeyHostToList)
 
-	_ = graph.AddEdge(nodeKeyHumanHelper, compose.END)
+	_ = graph.AddEdge(nodeKeySearcherToList, nodeKeySearcher)
+	_ = graph.AddEdge(nodeKeySearcher, nodeKeyHostToList)
+
 	_ = graph.AddEdge(nodeKeyHumanHelperToList, nodeKeyHumanHelper)
+	_ = graph.AddEdge(nodeKeyHumanHelper, nodeKeyHostToList)
+
+	_ = graph.AddEdge(nodeKeyFinish, compose.END)
 
 	runnable, err := graph.Compile(ctx,
 		compose.WithNodeTriggerMode(compose.AnyPredecessor))
@@ -142,6 +153,9 @@ func hostPreHandle(ctx context.Context, input []*schema.Message, state *state) (
 	}
 	if state.searchResult != "" {
 		contextInfo += fmt.Sprintf("Search结果: %s\n", state.searchResult)
+	}
+	if state.humanHelpResult != "" {
+		contextInfo += fmt.Sprintf("HumanHelp结果: %s\n", state.humanHelpResult)
 	}
 
 	userMessage := state.originalInput
@@ -252,21 +266,10 @@ func hostBranchCondition(ctx context.Context, msg *schema.Message) (string, erro
 	case "HumanHelper":
 		return nodeKeyHumanHelperToList, nil
 	case "Finish":
-		return compose.END, nil
+		return nodeKeyFinish, nil
 	default:
-		return compose.END, nil
+		return nodeKeyFinish, nil
 	}
-}
-
-func autoFixerBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
-	if strings.Contains(strings.ToLower(msg.Content), "修复成功") {
-		return nodeKeyHostToList, nil
-	}
-	return nodeKeyHostToList, nil
-}
-
-func searcherBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
-	return nodeKeyHostToList, nil
 }
 
 func newRAGChain(ctx context.Context, retriever *llm.HybridRetriever) (*compose.Chain[*schema.Message, *schema.Message], error) {

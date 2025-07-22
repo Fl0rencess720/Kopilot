@@ -12,7 +12,7 @@ import (
 	"github.com/cloudwego/eino/flow/agent/react"
 )
 
-func creatAutoFixNode(ctx context.Context, cm model.ToolCallingChatModel, dynamicClient dynamic.Interface) (compose.AnyGraph, []compose.GraphAddNodeOpt, error) {
+func newAutoFixerAgent(ctx context.Context, cm model.ToolCallingChatModel, dynamicClient dynamic.Interface) (compose.AnyGraph, []compose.GraphAddNodeOpt, error) {
 	kubectlPatchTool, err := tools.CreateKubectlPatchTool(dynamicClient)
 	if err != nil {
 		return nil, nil, err
