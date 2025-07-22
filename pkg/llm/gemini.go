@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
 	"google.golang.org/genai"
 )
@@ -37,15 +39,7 @@ func NewGeminiClient(model, apiKey, language string, thinking bool, retriever *H
 }
 
 func (c *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
-	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: c.client,
-		Model:  c.model,
-		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: c.thinking,
-			ThinkingBudget:  nil,
-		},
-		ResponseSchema: KubernetesLogAnalyzeResponseSchema,
-	})
+	cm, err := c.GetModel(ctx, KubernetesLogAnalyzeResponseSchema)
 	if err != nil {
 		zap.L().Error("NewChatModel of gemini failed", zap.Error(err))
 		return "", err
@@ -76,4 +70,20 @@ func (c *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs str
 		return "", err
 	}
 	return result.Content, nil
+}
+
+func (c *GeminiClient) GetModel(ctx context.Context, responseSchema *openapi3.Schema) (model.ToolCallingChatModel, error) {
+	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
+		Client: c.client,
+		Model:  c.model,
+		ThinkingConfig: &genai.ThinkingConfig{
+			IncludeThoughts: c.thinking,
+			ThinkingBudget:  nil,
+		},
+		ResponseSchema: responseSchema,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cm, nil
 }

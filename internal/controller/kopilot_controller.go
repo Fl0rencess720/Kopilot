@@ -24,12 +24,14 @@ import (
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
 	"github.com/Fl0rencess720/Kopilot/pkg/llm"
+	"github.com/Fl0rencess720/Kopilot/pkg/llm/multiagent"
 	"github.com/Fl0rencess720/Kopilot/pkg/sink/feishusink"
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,8 +41,9 @@ import (
 // KopilotReconciler reconciles a Kopilot object
 type KopilotReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	Clientset kubernetes.Interface
+	Scheme        *runtime.Scheme
+	Clientset     kubernetes.Interface
+	DynamicClient dynamic.Interface
 }
 
 type UnHealthyPod struct {
@@ -163,55 +166,48 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 
 	for _, pod := range unhealthyPods {
 		var c llm.LLMClient
+		var retriever *llm.HybridRetriever
 		if knowledgeBase != nil {
-			embedder, err := llm.NewEmbedder(ctx, r.Clientset, *knowledgeBase)
-			if err != nil {
-				l.Error(err, "unable to create embedder")
-				return err
-			}
-			milvusClient, err := llm.NewMilvusClient(ctx, r.Clientset, *knowledgeBase)
-			if err != nil {
-				l.Error(err, "unable to create milvus client")
-				return err
-			}
-			retriever, err := llm.NewHybridRetriever(milvusClient, embedder, *knowledgeBase)
+			retriever, err = llm.NewHybridRetriever(ctx, r.Clientset, *knowledgeBase)
 			if err != nil {
 				l.Error(err, "unable to create hybrid retriever")
 				return err
 			}
+		}
+		switch llmSpec.WorkingMode {
+		case "single":
 			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, retriever)
 			if err != nil {
 				l.Error(err, "unable to create LLM client")
 				return err
 			}
-		} else {
-			c, err = llm.NewLLMClient(ctx, r.Clientset, llmSpec, nil)
+
+			result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
 			if err != nil {
-				l.Error(err, "unable to create LLM client")
+				l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
+				return err
+			}
+
+			sink, err := feishusink.NewFeishuSink(r.Clientset, *sinks[0].Feishu)
+			if err != nil {
+				l.Error(err, "unable to create feishu sink")
+				return err
+			}
+			if err := sink.SendBotMessage(pod.Namespace, pod.Name, result); err != nil {
+				l.Error(err, "unable to send result to feishu")
+				return err
+			}
+		case "multi":
+			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, r.DynamicClient, llmSpec, retriever)
+			if err != nil {
+				l.Error(err, "unable to create multiagent")
+				return err
+			}
+			if err := ma.Run(ctx, pod.Log); err != nil {
+				l.Error(err, "unable to run multiagent")
 				return err
 			}
 		}
-
-		result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
-		if err != nil {
-			l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
-			return err
-		}
-		signatureSecret, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.SignatureSecretRef.Key, "default", sinks[0].Feishu.SignatureSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get signature secret")
-			return err
-		}
-		webhookURL, err := utils.GetSecret(r.Clientset, sinks[0].Feishu.WebhookSecretRef.Key, "default", sinks[0].Feishu.WebhookSecretRef.Name)
-		if err != nil {
-			l.Error(err, "unable to get webhook secret")
-			return err
-		}
-		if err := feishusink.SendBotMessage(webhookURL, signatureSecret, pod.Namespace, pod.Name, result); err != nil {
-			l.Error(err, "unable to send result to sink")
-			return err
-		}
-
 	}
 	return nil
 }

@@ -6,12 +6,15 @@ import (
 
 	kopilotv1 "github.com/Fl0rencess720/Kopilot/api/v1"
 	"github.com/Fl0rencess720/Kopilot/internal/controller/utils"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 )
 
 type LLMClient interface {
 	Analyze(ctx context.Context, namespace, podName, logs string) (string, error)
+	GetModel(ctx context.Context, responseSchema *openapi3.Schema) (model.ToolCallingChatModel, error)
 }
 
 func NewLLMClient(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec, retriever *HybridRetriever) (LLMClient, error) {

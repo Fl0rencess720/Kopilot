@@ -102,11 +102,56 @@ spec:
                     enum:
                     - ark
                     type: string
+                  passwordSecretRef:
+                    description: SecretKeyRef is a reference to a key within a Kubernetes
+                      Secret.
+                    properties:
+                      key:
+                        description: Key within the Secret.
+                        type: string
+                      name:
+                        description: Name of the Secret.
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace is the namespace where the Secret is located.
+                          If not specified, defaults to the same namespace as the Kopilot instance.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  topK:
+                    default: 10
+                    description: TopK is the number of top results to return from
+                      the knowledge base.
+                    minimum: 1
+                    type: integer
+                  usernameSecretRef:
+                    description: SecretKeyRef is a reference to a key within a Kubernetes
+                      Secret.
+                    properties:
+                      key:
+                        description: Key within the Secret.
+                        type: string
+                      name:
+                        description: Name of the Secret.
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace is the namespace where the Secret is located.
+                          If not specified, defaults to the same namespace as the Kopilot instance.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
                 required:
                 - address
                 - collectionName
                 - dimension
                 - embeddingProvider
+                - topK
                 type: object
               llm:
                 description: LLMSpec defines the AI configuration.
@@ -191,9 +236,17 @@ spec:
                     - gemini
                     - deepseek
                     type: string
+                  workingMode:
+                    default: single
+                    description: WorkingMode specifies the AI working mode.
+                    enum:
+                    - single
+                    - multi
+                    type: string
                 required:
                 - language
                 - model
+                - workingMode
                 type: object
               logSource:
                 description: LogSourceSpec defines the source of logs.
