@@ -72,10 +72,30 @@ var (
 
 var (
 	AutoFixerSystemPrompt = schema.SystemMessage(
-		`你是一个K8s自动修复专家。请分析问题并尝试自动修复。
-		如果修复成功，返回'修复成功：[具体修复内容]';
-		如果修复失败，返回'修复失败：[失败原因]'。
+		`你是一个K8s修复专家。请分析问题并尝试修复。
+		你仅允许修复能够使用kubectl patch命令修复的问题。
+		若你判断该问题无法自动修复，请返回空字符串。
+		你的回答格式必须严格遵循以下JSON格式：
+		1、问题可以修复时
+		{
+			"autofix": "kubectl patch xxx"
+		}
+		2、问题无法修复时
+		{
+			"autofix": ""
+		}
 		`)
+	AutoFixerResponseSchema = &openapi3.Schema{
+		Type: "object",
+		Properties: map[string]*openapi3.SchemaRef{
+			"autofix": {
+				Value: &openapi3.Schema{
+					Type: "string",
+				},
+			},
+		},
+		Required: []string{"autofix"},
+	}
 
 	SearcherSystemPrompt = schema.SystemMessage(
 		`你是一个网络搜索专家。

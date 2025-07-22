@@ -8,6 +8,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -17,14 +18,15 @@ type LogMultiAgent struct {
 }
 
 type LogMultiAgentConfig struct {
-	Host        model.ToolCallingChatModel
-	Autofixer   model.ToolCallingChatModel
-	Searcher    model.ToolCallingChatModel
-	Humanhelper model.ToolCallingChatModel
-	Retriever   *llm.HybridRetriever
+	Host          model.ToolCallingChatModel
+	Autofixer     model.ToolCallingChatModel
+	Searcher      model.ToolCallingChatModel
+	Humanhelper   model.ToolCallingChatModel
+	Retriever     *llm.HybridRetriever
+	dynamicClient dynamic.Interface
 }
 
-func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSpec kopilotv1.LLMSpec, retriever *llm.HybridRetriever) (*LogMultiAgent, error) {
+func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, dynamicClient dynamic.Interface, llmSpec kopilotv1.LLMSpec, retriever *llm.HybridRetriever) (*LogMultiAgent, error) {
 	maLLM, err := llm.NewLLMClient(ctx, clientset, llmSpec, nil)
 	if err != nil {
 		return nil, err
@@ -46,11 +48,12 @@ func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, llmSp
 		return nil, err
 	}
 	config := LogMultiAgentConfig{
-		Host:        host,
-		Autofixer:   autofixer,
-		Searcher:    searcher,
-		Humanhelper: humanhelper,
-		Retriever:   retriever,
+		Host:          host,
+		Autofixer:     autofixer,
+		Searcher:      searcher,
+		Humanhelper:   humanhelper,
+		Retriever:     retriever,
+		dynamicClient: dynamicClient,
 	}
 	runnable, err := newGraphRunnable(ctx, &config)
 	if err != nil {

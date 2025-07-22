@@ -31,6 +31,7 @@ import (
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,8 +41,9 @@ import (
 // KopilotReconciler reconciles a Kopilot object
 type KopilotReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	Clientset kubernetes.Interface
+	Scheme        *runtime.Scheme
+	Clientset     kubernetes.Interface
+	DynamicClient dynamic.Interface
 }
 
 type UnHealthyPod struct {
@@ -196,7 +198,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				return err
 			}
 		case "multi":
-			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, llmSpec, retriever)
+			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, r.DynamicClient, llmSpec, retriever)
 			if err != nil {
 				l.Error(err, "unable to create multiagent")
 				return err

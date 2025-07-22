@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Fl0rencess720/Kopilot/pkg/llm"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -39,6 +40,12 @@ const (
 )
 
 func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose.Runnable[[]*schema.Message, *schema.Message], error) {
+
+	autoFixNode, autoFixOpts, err := creatAutoFixNode(ctx, config.Autofixer, config.dynamicClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auto fix node: %w", err)
+	}
+
 	hasKnowledgeBase := false
 	if config.Retriever != nil {
 		hasKnowledgeBase = true
@@ -53,13 +60,13 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 		compose.WithStatePreHandler(hostPreHandle),
 		compose.WithNodeName(nodeKeyHost))
 
-	_ = graph.AddChatModelNode(nodeKeyAutoFixer, config.Autofixer,
-		compose.WithStatePreHandler(autoFixerPreHandle),
+	autoFixOpts = append(autoFixOpts, compose.WithStatePreHandler(autoFixerPreHandle),
 		compose.WithStatePostHandler(func(ctx context.Context, output *schema.Message, state *state) (*schema.Message, error) {
 			state.autoFixResult = output.Content
 			return output, nil
 		}),
 		compose.WithNodeName(nodeKeyAutoFixer))
+	_ = graph.AddGraphNode(nodeKeyAutoFixer, autoFixNode, autoFixOpts...)
 
 	_ = graph.AddChatModelNode(nodeKeySearcher, config.Searcher,
 		compose.WithStatePreHandler(searcherPreHandle),
@@ -78,27 +85,10 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 	_ = graph.AddLambdaNode(nodeKeySearcherToList, compose.ToList[*schema.Message]())
 	_ = graph.AddLambdaNode(nodeKeyHumanHelperToList, compose.ToList[*schema.Message]())
 
-	ragChain := compose.NewChain[*schema.Message, *schema.Message]()
-	ragChain.
-		AppendLambda(compose.InvokableLambda(func(_ context.Context, input *schema.Message) (string, error) {
-			var originalInput string
-			if err := compose.ProcessState(ctx, func(ctx context.Context, state *state) error {
-				originalInput = state.originalInput
-				return nil
-			}); err != nil {
-				return "", err
-			}
-			return originalInput, nil
-		})).
-		AppendRetriever(config.Retriever).
-		AppendLambda(compose.InvokableLambda(func(_ context.Context, docs []*schema.Document) (*schema.Message, error) {
-			var contents []string
-			for _, doc := range docs {
-				contents = append(contents, doc.Content)
-			}
-			knowledge := strings.Join(contents, "\n")
-			return &schema.Message{Content: knowledge}, nil
-		}))
+	ragChain, err := newRAGChain(ctx, config.Retriever)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create RAG chain: %w", err)
+	}
 
 	_ = graph.AddGraphNode(nodeKeyAutoFixerRetriever, ragChain)
 
@@ -244,4 +234,29 @@ func autoFixerBranchCondition(ctx context.Context, msg *schema.Message) (string,
 
 func searcherBranchCondition(ctx context.Context, msg *schema.Message) (string, error) {
 	return nodeKeyHostToList, nil
+}
+
+func newRAGChain(ctx context.Context, retriever *llm.HybridRetriever) (*compose.Chain[*schema.Message, *schema.Message], error) {
+	ragChain := compose.NewChain[*schema.Message, *schema.Message]()
+	ragChain.
+		AppendLambda(compose.InvokableLambda(func(_ context.Context, input *schema.Message) (string, error) {
+			var originalInput string
+			if err := compose.ProcessState(ctx, func(ctx context.Context, state *state) error {
+				originalInput = state.originalInput
+				return nil
+			}); err != nil {
+				return "", err
+			}
+			return originalInput, nil
+		})).
+		AppendRetriever(retriever).
+		AppendLambda(compose.InvokableLambda(func(_ context.Context, docs []*schema.Document) (*schema.Message, error) {
+			var contents []string
+			for _, doc := range docs {
+				contents = append(contents, doc.Content)
+			}
+			knowledge := strings.Join(contents, "\n")
+			return &schema.Message{Content: knowledge}, nil
+		}))
+	return ragChain, nil
 }
