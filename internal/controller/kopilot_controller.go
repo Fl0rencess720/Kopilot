@@ -198,7 +198,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				return err
 			}
 		case "multi":
-			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, r.DynamicClient, llmSpec, retriever)
+			ma, err := multiagent.NewLogMultiAgent(ctx, r.Clientset, r.DynamicClient, llmSpec, retriever, llmSpec.Language)
 			if err != nil {
 				l.Error(err, "unable to create multiagent")
 				return err

@@ -17,6 +17,7 @@ type state struct {
 	searchResult     string
 	hasKnowledgeBase bool
 	messages         []*schema.Message
+	language         string
 }
 
 type HostDecision struct {
@@ -52,7 +53,10 @@ func newGraphRunnable(ctx context.Context, config *LogMultiAgentConfig) (compose
 	}
 	graph := compose.NewGraph[[]*schema.Message, *schema.Message](
 		compose.WithGenLocalState(func(ctx context.Context) *state {
-			return &state{hasKnowledgeBase: hasKnowledgeBase}
+			return &state{
+				hasKnowledgeBase: hasKnowledgeBase,
+				language:         config.language,
+			}
 		}),
 	)
 
@@ -144,9 +148,14 @@ func hostPreHandle(ctx context.Context, input []*schema.Message, state *state) (
 	if contextInfo != "" {
 		userMessage = fmt.Sprintf("%s\n\n历史上下文:\n%s", state.originalInput, contextInfo)
 	}
-
+	systemPrompt, err := HostSystemPrompt.Format(ctx, map[string]any{
+		"lang": llm.GetLanguageName(state.language),
+	}, schema.GoTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format system prompt: %w", err)
+	}
 	return []*schema.Message{
-		HostSystemPrompt,
+		systemPrompt[0],
 		schema.UserMessage(userMessage),
 	}, nil
 }
@@ -154,13 +163,25 @@ func hostPreHandle(ctx context.Context, input []*schema.Message, state *state) (
 func autoFixerPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
 	msg := []*schema.Message{}
 	if state.hasKnowledgeBase {
+		systemPrompt, err := AutoFixerSystemPrompt.Format(ctx, map[string]any{
+			"lang": llm.GetLanguageName(state.language),
+		}, schema.GoTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format system prompt: %w", err)
+		}
 		msg = []*schema.Message{
-			AutoFixerSystemPrompt,
+			systemPrompt[0],
 			schema.UserMessage(fmt.Sprintf("请参照运维文档对以下K8s问题进行自动修复：\n%s\n运维文档：\n%s\n", state.originalInput, input[0].Content)),
 		}
 	} else {
+		systemPrompt, err := AutoFixerSystemPrompt.Format(ctx, map[string]any{
+			"lang": llm.GetLanguageName(state.language),
+		}, schema.GoTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format system prompt: %w", err)
+		}
 		msg = []*schema.Message{
-			AutoFixerSystemPrompt,
+			systemPrompt[0],
 			schema.UserMessage(fmt.Sprintf("请对以下K8s问题进行自动修复：\n%s", state.originalInput)),
 		}
 	}
@@ -168,15 +189,27 @@ func autoFixerPreHandle(ctx context.Context, input []*schema.Message, state *sta
 }
 
 func searcherPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	systemPrompt, err := SearcherSystemPrompt.Format(ctx, map[string]any{
+		"lang": llm.GetLanguageName(state.language),
+	}, schema.GoTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format system prompt: %w", err)
+	}
 	return []*schema.Message{
-		SearcherSystemPrompt,
+		systemPrompt[0],
 		schema.UserMessage(fmt.Sprintf("请搜索以下K8s问题的解决方案：\n原始问题：%s\nAutoFix失败结果：%s", state.originalInput, state.autoFixResult)),
 	}, nil
 }
 
 func humanHelperPreHandle(ctx context.Context, input []*schema.Message, state *state) ([]*schema.Message, error) {
+	systemPrompt, err := HumanHelperSystemPrompt.Format(ctx, map[string]any{
+		"lang": llm.GetLanguageName(state.language),
+	}, schema.GoTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to format system prompt: %w", err)
+	}
 	return []*schema.Message{
-		HumanHelperSystemPrompt,
+		systemPrompt[0],
 		schema.UserMessage(fmt.Sprintf(`请生成问题处理文档：  
 			原始问题：%s  
 			自动修复结果：%s    

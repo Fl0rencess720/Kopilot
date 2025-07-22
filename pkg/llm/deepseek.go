@@ -51,7 +51,7 @@ func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs s
 
 	input := map[string]any{
 		"logs": logs,
-		"lang": c.language,
+		"lang": GetLanguageName(c.language),
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {
