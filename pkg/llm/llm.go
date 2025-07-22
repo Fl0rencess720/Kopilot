@@ -9,11 +9,12 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
 
 type LLMClient interface {
-	Analyze(ctx context.Context, namespace, podName, logs string) (string, error)
+	Analyze(ctx context.Context, pod corev1.Pod, logs string) (string, error)
 	GetModel(ctx context.Context, responseSchema *openapi3.Schema) (model.ToolCallingChatModel, error)
 }
 

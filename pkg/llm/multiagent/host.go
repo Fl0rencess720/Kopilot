@@ -9,6 +9,8 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 )
@@ -69,9 +71,14 @@ func NewLogMultiAgent(ctx context.Context, clientset kubernetes.Interface, dynam
 	return ma, nil
 }
 
-func (ma *LogMultiAgent) Run(ctx context.Context, logs string) (string, error) {
+func (ma *LogMultiAgent) Run(ctx context.Context, pod corev1.Pod, logs string) (string, error) {
+	resourceYaml, err := yaml.Marshal(pod)
+	if err != nil {
+		return "", err
+	}
+	content := fmt.Sprintf("资源 yaml: %s\n日志内容: %s", string(resourceYaml), logs)
 	in := []*schema.Message{{
-		Content: logs,
+		Content: content,
 	}}
 	output, err := ma.runnable.Invoke(ctx, in)
 	if err != nil {

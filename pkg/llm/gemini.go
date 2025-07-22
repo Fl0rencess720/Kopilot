@@ -10,6 +10,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
 	"google.golang.org/genai"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type GeminiClient struct {
@@ -38,7 +40,7 @@ func NewGeminiClient(model, apiKey, language string, thinking bool, retriever *H
 	}, nil
 }
 
-func (c *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
+func (c *GeminiClient) Analyze(ctx context.Context, pod corev1.Pod, logs string) (string, error) {
 	cm, err := c.GetModel(ctx, KubernetesLogAnalyzeResponseSchema)
 	if err != nil {
 		zap.L().Error("NewChatModel of gemini failed", zap.Error(err))
@@ -60,9 +62,16 @@ func (c *GeminiClient) Analyze(ctx context.Context, namespace, podName, logs str
 		}
 	}
 
+	podYaml, err := yaml.Marshal(pod)
+	if err != nil {
+		zap.L().Error("Marshal pod to yaml failed", zap.Error(err))
+		return "", err
+	}
+
 	input := map[string]any{
-		"logs": logs,
-		"lang": GetLanguageName(c.language),
+		"pod_yaml": string(podYaml),
+		"logs":     logs,
+		"lang":     GetLanguageName(c.language),
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {

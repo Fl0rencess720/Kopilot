@@ -29,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/robfig/cron"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
@@ -47,9 +48,8 @@ type KopilotReconciler struct {
 }
 
 type UnHealthyPod struct {
-	Namespace string
-	Name      string
-	Log       string
+	Pod corev1.Pod
+	Log string
 }
 
 // +kubebuilder:rbac:groups=kopilot.fl0rencess720,resources=kopilots,verbs=get;list;watch;create;update;patch;delete
@@ -151,9 +151,8 @@ func (r *KopilotReconciler) getUnhealthyPods(ctx context.Context, l logr.Logger,
 			}
 
 			unhealthyPods = append(unhealthyPods, UnHealthyPod{
-				Namespace: pod.Namespace,
-				Name:      pod.Name,
-				Log:       logs,
+				Pod: pod,
+				Log: logs,
 			})
 		}
 	}
@@ -182,9 +181,9 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				return err
 			}
 
-			result, err := c.Analyze(ctx, pod.Namespace, pod.Name, pod.Log)
+			result, err := c.Analyze(ctx, pod.Pod, pod.Log)
 			if err != nil {
-				l.Error(err, "unable to analyze pod", "pod", pod.Name, "namespace", pod.Namespace)
+				l.Error(err, "unable to analyze pod", "pod", pod.Pod.Name, "namespace", pod.Pod.Namespace)
 				return err
 			}
 
@@ -193,7 +192,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				l.Error(err, "unable to create feishu sink")
 				return err
 			}
-			if err := sink.SendBotMessage(pod.Namespace, pod.Name, result); err != nil {
+			if err := sink.SendBotMessage(pod.Pod.Namespace, pod.Pod.Name, result); err != nil {
 				l.Error(err, "unable to send result to feishu")
 				return err
 			}
@@ -203,7 +202,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				l.Error(err, "unable to create multiagent")
 				return err
 			}
-			result, err := ma.Run(ctx, pod.Log)
+			result, err := ma.Run(ctx, pod.Pod, pod.Log)
 			if err != nil {
 				l.Error(err, "unable to run multiagent")
 				return err
@@ -213,7 +212,7 @@ func (r *KopilotReconciler) sendUnhealthyPodsToLLM(ctx context.Context, l logr.L
 				l.Error(err, "unable to create feishu sink")
 				return err
 			}
-			if err := sink.SendBotMessage(pod.Namespace, pod.Name, result); err != nil {
+			if err := sink.SendBotMessage(pod.Pod.Namespace, pod.Pod.Name, result); err != nil {
 				l.Error(err, "unable to send result to feishu")
 				return err
 			}

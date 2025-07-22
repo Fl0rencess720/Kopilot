@@ -37,7 +37,7 @@ func newRunnableWithRetriever(ctx context.Context, cm model.BaseChatModel, retri
 	ragReplacer := compose.InvokableLambda(func(_ context.Context, inputs map[string]any) ([]*schema.Message, error) {
 		knowledge := inputs["rag_chain"].(string)
 		msgs := inputs["pass_msg"].([]*schema.Message)
-		msgs[1].Content = fmt.Sprintf("日志内容: %s\n运维文档: %s\n", msgs[1].Content, knowledge)
+		msgs[1].Content += fmt.Sprintf("\n运维文档: %s\n", knowledge)
 		msgs[1].Content += `你需要从运维文档找到对于给出日志中所显示的问题的合适的解决方案，若运维文档为空或没有找到合适的解决方案，
 		则由你自己给出合适的解决方案。`
 		return msgs, nil

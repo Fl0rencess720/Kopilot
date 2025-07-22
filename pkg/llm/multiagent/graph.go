@@ -13,6 +13,7 @@ import (
 
 type state struct {
 	originalInput    string
+	resourceYaml     string
 	autoFixResult    string
 	searchResult     string
 	humanHelpResult  string

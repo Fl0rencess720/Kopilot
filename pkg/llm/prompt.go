@@ -29,8 +29,8 @@ var (
         "sink": true  
         }
 		请使用{{.lang}}回答
-		以下是日志内容和运维文档:`),
-		schema.UserMessage("{{.logs}}"),
+		以下是该Pod的yaml, 日志内容和运维文档:`),
+		schema.UserMessage("Pod yaml: {{.pod_yaml}}\n日志内容：{{.logs}}"),
 	)
 
 	KubernetesLogAnalyzeResponseSchema = &openapi3.Schema{
