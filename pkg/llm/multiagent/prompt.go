@@ -38,6 +38,7 @@ var (
 		Searcher: 网络搜索,当自动修复失败后,请使用此选项,此时context字段必须为空
 		HumanHelper:  寻求人类帮助,当自动修复失败且已经进行过网络搜索后,请将自动修复失败所返回的上下文和网络搜索结果整理后写入context字段
 		Finish: 任务结束,当你认为问题已经解决时,请使用该选项,例如当自动修复成功或成功寻求人类帮助后,则可以选择Finish
+		请使用{{.lang}}回答
 		`)
 
 	HostResponseSchema = &openapi3.Schema{
@@ -74,36 +75,19 @@ var (
 	AutoFixerSystemPrompt = schema.SystemMessage(
 		`你是一个K8s修复专家。请分析问题并尝试修复。
 		你仅允许修复能够使用kubectl patch命令修复的问题。
-		若你判断该问题无法自动修复，请返回空字符串。
-		你的回答格式必须严格遵循以下JSON格式：
-		1、问题可以修复时
-		{
-			"autofix": "kubectl patch xxx"
-		}
-		2、问题无法修复时
-		{
-			"autofix": ""
-		}
+		请调用相关工具进行修复
+		请使用{{.lang}}回答
 		`)
-	AutoFixerResponseSchema = &openapi3.Schema{
-		Type: "object",
-		Properties: map[string]*openapi3.SchemaRef{
-			"autofix": {
-				Value: &openapi3.Schema{
-					Type: "string",
-				},
-			},
-		},
-		Required: []string{"autofix"},
-	}
 
 	SearcherSystemPrompt = schema.SystemMessage(
 		`你是一个网络搜索专家。
 		请搜索相关的K8s问题解决方案。
 		返回格式：'搜索结果：[相关解决方案]'。
+		请使用{{.lang}}回答
 		`)
 	HumanHelperSystemPrompt = schema.SystemMessage(
 		`你是一个文档撰写专家。
 		请基于原始日志及自动修复失败和搜索结果，生成详细的问题文档供人工处理。
+		请使用{{.lang}}回答
 		`)
 )

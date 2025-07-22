@@ -9,6 +9,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type DeepSeekClient struct {
@@ -26,7 +28,7 @@ func NewDeepSeekClient(model, apiKey, language string, retriever *HybridRetrieve
 	}, nil
 }
 
-func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs string) (string, error) {
+func (c *DeepSeekClient) Analyze(ctx context.Context, pod corev1.Pod, logs string) (string, error) {
 	cm, err := c.GetModel(ctx, KubernetesLogAnalyzeResponseSchema)
 	if err != nil {
 		zap.L().Error("NewChatModel of deepseek failed", zap.Error(err))
@@ -49,9 +51,16 @@ func (c *DeepSeekClient) Analyze(ctx context.Context, namespace, podName, logs s
 		}
 	}
 
+	podYaml, err := yaml.Marshal(pod)
+	if err != nil {
+		zap.L().Error("Marshal pod to yaml failed", zap.Error(err))
+		return "", err
+	}
+
 	input := map[string]any{
-		"logs": logs,
-		"lang": c.language,
+		"pod_yaml": string(podYaml),
+		"logs":     logs,
+		"lang":     GetLanguageName(c.language),
 	}
 	result, err := runnable.Invoke(ctx, input)
 	if err != nil {
