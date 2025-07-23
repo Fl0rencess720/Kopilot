@@ -74,7 +74,7 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	schedule, err := cron.ParseStandard(kopilot.Spec.Schedule)
 	if err != nil {
 		l.Error(err, "unable to parse schedule", "schedule", kopilot.Spec.Schedule)
-		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+		return ctrl.Result{}, err
 	}
 
 	now := time.Now()
@@ -86,22 +86,23 @@ func (r *KopilotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	expectedNextCheckTime := schedule.Next(lastCheckTime)
+	nextCheckDuration := expectedNextCheckTime.Sub(now)
+
 	if now.Before(expectedNextCheckTime) {
 		l.Info("Skipping check", "nextCheckTime", expectedNextCheckTime)
-		return ctrl.Result{RequeueAfter: expectedNextCheckTime.Sub(now)}, nil
+		return ctrl.Result{RequeueAfter: nextCheckDuration}, nil
 	}
 
 	unhealthyPods := r.getUnhealthyPods(ctx, l, kopilot.Spec.LogSource)
 
 	if err := r.sendUnhealthyPodsToLLM(ctx, l, unhealthyPods, kopilot.Spec.LLM, kopilot.Spec.Notification.Sinks, kopilot.Spec.KnowledgeBase); err != nil {
 		zap.L().Error("failed to send unhealthy pods to LLM", zap.Error(err))
-		return ctrl.Result{RequeueAfter: 10 * time.Minute}, nil
+		return ctrl.Result{RequeueAfter: nextCheckDuration}, nil
 	}
 
 	kopilot.Status.LastCheckTime = &metav1.Time{Time: now}
 	if err := r.Status().Update(ctx, &kopilot); err != nil {
 		l.Error(err, "failed to update Kopilot status")
-
 	}
 
 	nextCheckTime := schedule.Next(now)
