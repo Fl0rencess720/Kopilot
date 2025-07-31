@@ -1,0 +1,14 @@
+server:
+  http:
+    addr: 0.0.0.0:8000
+    timeout: 900s
+
+trace:
+  endpoint: ${TRACE_ENDPOINT}
+  otel_state: able
+  sample_ration: 1.0
+
+project:
+  mode: dev
+  
+service:
